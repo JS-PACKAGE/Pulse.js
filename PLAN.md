@@ -1,6 +1,6 @@
 # Pulse.js 多主機中央監控面板 企劃書 v1.8
 
-一句話：以 **TypeScript（Node.js）** 為形態的多主機中央監控系統（**Pulse.js**），面板以遠端 `host-install.sh` 一鍵安裝並自動啟動，Agent 經遠端 `install.sh` 一鍵安裝並自動偵測系統，各端以 header 帶 Auth 驗證碼 POST 回報五項主機指標（含多卡 GPU）至 host 端（SQLite 持久化，驗證由 Cloudflare Zero Trust 層進行），Web 面板首頁只列異常中主機、詳情頁依主機系統與自訂群組分組檢視。
+一句話：以 **TypeScript（Node.js）** 為形態的多主機中央監控系統（**Pulse.js**），面板以遠端 `host-install.sh` 一鍵安裝並自動啟動，Agent 經遠端 `install.sh` 一鍵安裝並自動偵測系統，各端以 header 帶 Cloudflare Access Service Token（用戶端識別碼＋服務金鑰）POST 回報五項主機指標（含多卡 GPU）至 host 端（SQLite 持久化，驗證由 Cloudflare Zero Trust 層進行），Web 面板首頁只列異常中主機、詳情頁依主機系統與自訂群組分組檢視。
 
 ### 基本資料
 
@@ -9,7 +9,7 @@
 | 套件名稱 | **Pulse.js** |
 | 程式語言 | **TypeScript**（Node.js） |
 | 執行環境 | Node.js **v24 以上**（本機實測 `node -v` = v26.10.0，見假設 1） |
-| 介面 | Web 監控面板（SPA）＋ REST API ＋ 各端 POST 上報端點（header 帶 Auth 驗證碼） |
+| 介面 | Web 監控面板（SPA）＋ REST API ＋ 各端 POST 上報端點（header 帶 Service Token） |
 | 安裝腳本 | `host-install.sh`（host 端＝面板，一鍵安裝＋自動啟動，支援 Ubuntu 與 macOS）、`install.sh`（Agent 端，一鍵安裝＋自動偵測系統，三平台） |
 | 邊緣驗證 | Cloudflare Zero Trust（Cloudflare Tunnel＋Access）；驗證於該層進行，App 端完全信任、不做比對（已裁示） |
 | 核心依賴 | `express` 5.3.0（MIT）、`better-sqlite3` 13.0.3（MIT）、`react` 19.3.1（MIT）、`vite` 8.3.4（MIT）、`vitest` 5.0.5（MIT）、`esbuild` 0.28.2（MIT）（npm 查證 2026-10-16） |
@@ -33,7 +33,7 @@
 - **詳情頁依主機系統與自訂群組分組**：系統分組自動（Linux-Deb／Linux-RPM／macOS），自訂群組由使用者建立與指派。
 - Agent 以**遠端 `install.sh` 一鍵安裝**，安裝時自動偵測系統（平台、發行版、硬體），免手動設定。
 - 面板（host 端）以**遠端 `host-install.sh` 一鍵安裝並自動啟動**；對外經 **Cloudflare Zero Trust**（Tunnel＋Access）保護，驗證於該層進行。
-- 各端 POST 上報以 header 帶 **Auth 驗證碼**；`install.sh` 結尾取得 POST 目標主機名稱與 Auth 驗證碼。
+- 各端 POST 上報以 header 帶 **Service Token**（`CF-Access-Client-Id`＋`CF-Access-Client-Secret`）；`install.sh` 結尾取得 POST 目標主機名稱、用戶端識別碼與服務金鑰。
 - 面板內建 i18n 三語切換（zh-TW／en／ja）與暗色／亮色雙主題。
 
 ### 範圍外
@@ -57,8 +57,8 @@
 | R9 | 實作順序：先必要文件與契約 Mock（Gate 0）→ 再寫程式 |
 | R10 | 授權 Apache License 2.0；README 附第三方授權聲明 |
 | R11 | 面板（host 端）以遠端 `host-install.sh` 一鍵安裝並自動啟動（systemd／launchd 開機自啟）；支援 Ubuntu 與 macOS，其他系統明確提示後中止；只裝面板——cloudflared 由使用者自備、腳本不代裝 |
-| R12 | 各端 POST 上報至 host 端一律以 `Authorization` header 攜帶 Auth 驗證碼；驗證由 Cloudflare Zero Trust 層進行，缺／錯一律該層即拒；App 端完全信任該層驗證結果、不做任何比對（已裁示） |
-| R13 | `install.sh` 結尾須取得 POST 目標主機名稱與 Auth 驗證碼（互動詢問或參數），寫入 Agent 設定、不入日誌；驗證碼為**單一碼全端共用**（已裁示），輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新 |
+| R12 | 各端 POST 上報至 host 端一律以 `CF-Access-Client-Id`／`CF-Access-Client-Secret` header 攜帶 Service Token；驗證由 Cloudflare Zero Trust 層進行（Service Auth policy），缺／錯一律該層即拒；App 端完全信任該層驗證結果、不做任何比對（已裁示，見裁示 17） |
+| R13 | `install.sh` 結尾須取得 POST 目標主機名稱、用戶端識別碼（Client ID）與服務金鑰（Client Secret）（互動詢問或參數；服務金鑰僅隱藏輸入／檔案／環境變數），寫入 Agent 設定、不入日誌；同一組 Service Token **全端共用**（已裁示），輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新 |
 
 ---
 
@@ -66,9 +66,9 @@
 
 | 面向 | 需求 |
 |---|---|
-| 安裝（Agent 端） | 遠端 `install.sh` 一鍵安裝；自動偵測平台（Linux-Deb／Linux-RPM／macOS）、架構、GPU 數、網路介面；以 systemd（Linux）／launchd（macOS）註冊為服務；結尾詢問 POST 目標主機名稱與 Auth 驗證碼後寫入 Agent 設定（R13） |
+| 安裝（Agent 端） | 遠端 `install.sh` 一鍵安裝；自動偵測平台（Linux-Deb／Linux-RPM／macOS）、架構、GPU 數、網路介面；以 systemd（Linux）／launchd（macOS）註冊為服務；結尾詢問 POST 目標主機名稱、用戶端識別碼與服務金鑰後寫入 Agent 設定（R13） |
 | 安裝（host 端） | 遠端 `host-install.sh` 一鍵安裝面板並自動啟動；支援 Ubuntu（註冊 systemd）與 macOS（註冊 launchd LaunchDaemon，系統帳號 `_pulse`），自動偵測平台與版本並開機自啟；其他系統明確提示後中止；只裝面板不代裝 cloudflared（由使用者自備，已裁示）；重跑即更新 |
-| Agent 回報 | 五指標週期上報（預設 30 秒）；上報 POST 一律以 `Authorization` header 帶 Auth 驗證碼；心跳逾時（預設 90 秒）判定離線＝異常 |
+| Agent 回報 | 五指標週期上報（預設 30 秒）；上報 POST 一律以 `CF-Access-Client-Id`／`CF-Access-Client-Secret` header 帶 Service Token；心跳逾時（預設 90 秒）判定離線＝異常 |
 | GPU | 多卡逐卡列舉（index、名稱、廠商、使用率、記憶體用量）；NVIDIA＋AMD＋Apple Silicon 全支援（已裁示）；缺驅動或無 GPU 型別標 N/A 不中斷 |
 | 異常判定 | 閾值（CPU、記憶體、磁碟、GPU、流量）＋離線判定；閾值在 `config.yaml` 可調 |
 | 首頁 | 僅列異常中主機卡片：主機名、系統、異常項目與數值、持續時間；點擊進詳情頁 |
@@ -127,20 +127,20 @@
 ## 四、通訊協定（各端 ⇄ host 端 ⇄ 面板）
 
 - 傳輸一律 HTTPS（TLS 終止於 Cloudflare Tunnel 邊緣）；JSON 訊息，單筆上限 64KB（見六節第 5 條）。
-- **驗證於 Cloudflare Zero Trust 層進行（已裁示）**：對外流量經 Cloudflare Tunnel＋Access，`Authorization` header 攜帶 Auth 驗證碼、由該層驗證；App 端完全信任該層結果、不做任何比對；驗證碼不得放 URL query 或 body（見六節第 2 條）。
+- **驗證於 Cloudflare Zero Trust 層進行（已裁示）**：對外流量經 Cloudflare Tunnel＋Access，`CF-Access-Client-Id`／`CF-Access-Client-Secret` header 攜帶 Service Token、由該層驗證；App 端完全信任該層結果、不做任何比對；服務金鑰不得放 URL query 或 body（見六節第 2 條）。
 
 | 訊息 | 方向 | 內容 |
 |---|---|---|
-| `register` | Agent→Server | header 帶 Auth 驗證碼；hostname、osFamily、osVersion、arch、cpuModel、gpuCount、agentVersion；Server 回 hostId |
-| `report` | Agent→Server | header 帶 Auth 驗證碼；hostId、ts、五指標＋GpuInfo[]（心跳併入，更新 lastSeen） |
+| `register` | Agent→Server | header 帶 Service Token；hostname、osFamily、osVersion、arch、cpuModel、gpuCount、agentVersion；Server 回 hostId |
+| `report` | Agent→Server | header 帶 Service Token；hostId、ts、五指標＋GpuInfo[]（心跳併入，更新 lastSeen） |
 | `listHosts` | 面板→Server | 主機清單含 status（ok／alert／offline） |
 | `hostDetail` | 面板→Server | 單機五指標即時值＋近期序列 |
 | `createGroup`／`renameGroup`／`deleteGroup` | 面板→Server | 自訂群組管理 |
 | `assignHost` | 面板→Server | 主機指派／移出自訂群組 |
 | `event` (SSE) | Server→面板 | 狀態變更即時推送（異常出現／解除） |
 
-- 錯誤碼表：`400` 欄位驗證失敗、`401` Auth 驗證碼缺失或錯誤（Zero Trust 層回絕）、`404` 主機／群組不存在、`409` 註冊衝突、`413` payload 過大、`429` 過頻、`500` 伺服器內部（對外 generic）。
-- **流程範例 1（安裝註冊）**：`curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh | bash` → 偵測 macOS → 裝 Agent＋launchd → 結尾輸入 POST 目標主機名稱＋Auth 驗證碼寫入設定 → `register` 成功 → 面板出現新主機（狀態 ok）。
+- 錯誤碼表：`400` 欄位驗證失敗、`401`／`403` Service Token 缺失或錯誤（Zero Trust 層回絕；未開 strict 模式時為 302 轉登入頁）、`404` 主機／群組不存在、`409` 註冊衝突、`413` payload 過大、`429` 過頻、`500` 伺服器內部（對外 generic）。
+- **流程範例 1（安裝註冊）**：`curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh | sudo bash` → 偵測 macOS → 裝 Agent＋launchd → 結尾輸入 POST 目標主機名稱＋用戶端識別碼＋服務金鑰寫入設定 → `register` 成功 → 面板出現新主機（狀態 ok）。
 - **流程範例 2（異常判定）**：Agent `report` 磁碟使用率 92% → 超過閾值 → 狀態 alert → 該主機卡片出現在首頁。
 - **流程範例 3（分組檢視）**：詳情頁依系統分組顯示三組（Linux-Deb／Linux-RPM／macOS）；使用者建自訂群組「生產環境」指派兩台 → 該群組區塊同步顯示。
 - **流程範例 4（面板部署）**：`curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-install.sh | sudo bash` → 偵測 Ubuntu／macOS → 裝面板＋註冊 systemd／launchd → 自動啟動 → 開啟面板首頁成功。
@@ -174,13 +174,13 @@ Threshold { metric, warn, crit }        # 對應 config.yaml
 ## 六、安全性架構（**須完整寫入 `AGENTS.md` 作為撰寫硬規則**）
 
 1. 傳輸強制 TLS：上報與 API 一律 HTTPS（經 Cloudflare Tunnel）；明文 HTTP 僅限本機開發。
-2. 驗證於 Cloudflare Zero Trust 層進行（已裁示）：對外流量經 Tunnel＋Access 以 Auth 驗證碼驗證（`Authorization` header），缺／錯一律該層拒絕；App 端完全信任該層結果、不做任何比對；且 App 不得繞過該層直達（監聽綁定 loopback 或防火牆限定 Tunnel 來源）；驗證碼不得放 URL query 或 body，不入日誌。
+2. 驗證於 Cloudflare Zero Trust 層進行（已裁示）：對外流量經 Tunnel＋Access 以 Service Token 驗證（`CF-Access-Client-Id`／`CF-Access-Client-Secret` header），缺／錯一律該層拒絕；App 端完全信任該層結果、不做任何比對；且 App 不得繞過該層直達（監聽綁定 loopback 或防火牆限定 Tunnel 來源）；服務金鑰不得放 URL query 或 body，不入日誌。
 3. 面板存取由 Cloudflare Zero Trust Access 驗證；App 端預設關閉匿名存取。
-4. 驗證唯一真值來源＝Cloudflare Zero Trust 層：Auth 驗證碼只存在該層設定，App 端不儲存、不比對、不重複實作驗證邏輯；驗證碼為單一碼全端共用（已裁示），輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新。
+4. 驗證唯一真值來源＝Cloudflare Zero Trust 層：Service Token 只存在該層設定，App 端不儲存、不比對、不重複實作驗證邏輯；同一組 token 全端共用（已裁示），輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新。
 5. 輸入驗證＋尺寸上限：JSON schema 驗證、payload 上限 64KB、hostname 正規化防注入。
 6. 每 host 回報頻率限制（預設每 10 秒 1 筆上限）；伺服器端容忍亂序、以 ts 遞增寫入。
 7. SQL 一律 prepared statement，禁字串拼接。
-8. 憑證（Auth 驗證碼／密碼）不入日誌；對外錯誤一律 generic，不洩內部堆疊。
+8. 憑證（服務金鑰／密碼）不入日誌；對外錯誤一律 generic，不洩內部堆疊。
 9. 依賴釘版＋lockfile；`npm audit` 納入 Gate 檢核。
 10. 資源防護：SQLite 設 WAL 與 busy_timeout、樣本表滾動清理、上報端點背壓（429）。
 
@@ -215,7 +215,7 @@ Threshold { metric, warn, crit }        # 對應 config.yaml
 | `nvidia-smi` 輸出格式隨驅動變動 | 解析失敗 | 解析器寬容處理缺欄＋格式不符 fail-closed 記錄 |
 | SQLite 單寫者瓶頸 | 上報尖峰延遲 | 單進程批次寫入＋WAL；主機規模超出上限時改佇列化（列入後續） |
 | 指標資料量成長 | 磁碟佔用 | 滾動保留預設 30 天＋每日清理（見五節） |
-| Auth 驗證碼洩漏 | 未授權端點存取 | 單一碼全端共用（已裁示）→洩漏即全面輪替：改 Zero Trust 設定＋各端重跑 `install.sh` 更新；Zero Trust 層單層拒絕（見六節第 4 條） |
+| 服務金鑰洩漏 | 未授權端點存取 | 同一組 Service Token 全端共用（已裁示）→洩漏即全面輪替：在 Zero Trust 輪替金鑰＋各端重跑 `install.sh` 更新；Zero Trust 層單層拒絕（見六節第 4 條） |
 | 繞過 Zero Trust 層直達 App | 未驗證請求進入 | App 監聽綁定 loopback／防火牆限定 Tunnel 來源（六節第 2 條）；列入 Gate 1 測試案例 |
 | cloudflared 未裝／設定錯誤 | Zero Trust 層無法對外、面板與上報全斷 | `host-install.sh` 不代裝（已裁示，使用者自備）；README 列前置安裝與設定步驟；腳本啟動時偵測提示 |
 | `host-install.sh` 需服務註冊權限 | 權限不足安裝中止 | 腳本偵測權限並明確提示；README 附手動安裝步驟 |
@@ -231,11 +231,11 @@ Threshold { metric, warn, crit }        # 對應 config.yaml
 
 ### Phase 1 — 伺服器核心＋SQLite
 Express REST API、資料模型建表、register／report、異常判定與離線判定。
-**Gate 1**：`vitest` 全綠；Mock Agent 依流程範例 1–2 走通（註冊→上報→超閾值→狀態 alert）；POST 端點驗證實測（缺／錯 Auth 驗證碼在 Zero Trust 層被拒、正確放行；App 端無比對邏輯）；App 直連測試確認非 Tunnel 來源不可達（對應 R2、R3、R5、R12）。
+**Gate 1**：`vitest` 全綠；Mock Agent 依流程範例 1–2 走通（註冊→上報→超閾值→狀態 alert）；POST 端點驗證實測（缺／錯 Service Token 在 Zero Trust 層被拒、正確放行；App 端無比對邏輯）；App 直連測試確認非 Tunnel 來源不可達（對應 R2、R3、R5、R12）。
 
 ### Phase 2 — Agent 採集器＋install.sh
 五指標 collectors、GPU adapter 實作、`install.sh` 平台自動偵測與服務註冊（systemd／launchd）。
-**Gate 2**：Linux 兩系各一台＋macOS 一台實測 `install.sh` 一鍵安裝（含結尾輸入主機名稱與 Auth 驗證碼）→指標回報→面板可見；多卡機器逐卡列舉正確；NVIDIA／AMD／Apple Silicon 各至少一台 GPU 指標實測（對應 R2、R4、R13）。
+**Gate 2**：Linux 兩系各一台＋macOS 一台實測 `install.sh` 一鍵安裝（含結尾輸入主機名稱、用戶端識別碼與服務金鑰）→指標回報→面板可見；多卡機器逐卡列舉正確；NVIDIA／AMD／Apple Silicon 各至少一台 GPU 指標實測（對應 R2、R4、R13）。
 
 ### Phase 3 — Web 面板＋host-install.sh
 首頁異常卡片、詳情頁系統＋自訂群組分組、即時曲線、i18n 三語、暗／亮主題；`host-install.sh` 面板一鍵安裝與自動啟動。
@@ -264,6 +264,7 @@ Express REST API、資料模型建表、register／report、異常判定與離�
 14. **裁示紀錄（2026-10-16）**：GPU 廠商範圍定案＝NVIDIA＋AMD＋Apple Silicon 全支援、多卡逐卡列舉；macOS 需 root 權限取指標之成本已接受。已落實至 R2、一節（GPU 列）、三節 3.1（三廠商 adapter＋Mock 四案例）、九節、Gate 2 與假設 3。
 15. **裁示紀錄（2026-10-16）**：cloudflared 歸屬定案＝由使用者自備安裝與設定，`host-install.sh` 只裝面板不代裝。已落實至 R11、一節（安裝 host 端列）、八節（面板安裝、服務部署）、九節（風險列）、假設 8；README 須列前置安裝步驟（七節）。
 16. **裁示紀錄（2026-10-16）**：驗證碼粒度定案＝單一 Auth 驗證碼全端共用；輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新（無新舊碼過渡機制）。已落實至 R13、六節第 4 條、九節（驗證碼洩漏列）。
+17. **裁示紀錄（2026-10-17）**：驗證憑證形式改為 Cloudflare Access Service Token 兩值——用戶端識別碼（Client ID）與服務金鑰（Client Secret），Agent 以官方 `CF-Access-Client-Id`／`CF-Access-Client-Secret` header 送出（取代裁示 12／16 的單一 `Authorization` 驗證碼；不再需要 `read_service_tokens_from_header`）。已落實至基本資料（介面）、目標、R12／R13、一節、四節、六節第 2／4／8 條、九節、流程範例 1、Gate 1／Gate 2。
 
 ---
 

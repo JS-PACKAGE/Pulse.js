@@ -4,7 +4,7 @@
 
 ```
 [受監控主機 Linux／macOS]                         [host 端（Ubuntu／macOS）]
-  pulse-agent ──HTTPS POST + Authorization──▶ Cloudflare Access ─▶ cloudflared ─▶ 127.0.0.1:8080
+  pulse-agent ──HTTPS POST + CF-Access 標頭──▶ Cloudflare Access ─▶ cloudflared ─▶ 127.0.0.1:8080
     collectors（/proc、sysctl、netstat）                                            Express REST API + SSE
     GPU adapters（nvidia-smi、rocm-smi、ioreg）                                     SQLite（WAL）
                                                                                     React 面板（zh-TW／en／ja、暗／亮）
@@ -26,16 +26,12 @@
 
 1. 在 host 上安裝 cloudflared（[官方說明](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)），建立 tunnel，ingress 指向面板：`service: http://127.0.0.1:8080`（埠號依 `config.yaml`）。
 2. 在 Zero Trust 建立 **Self-hosted Access application** 涵蓋該網域；人員以 Access policy 登入面板。
-3. Agent 上報用 **Service Token**：建立 service token，在 application 加一條 *Service Auth* policy 允許它，並把 application 的 `read_service_tokens_from_header` 設為 `Authorization`（[Cloudflare 文件](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)）。此時 **Auth 驗證碼**就是整段 header 值：
+3. Agent 上報用 **Service Token**：在 Zero Trust → Access controls → Service credentials 建立 service token，記下 **Client ID（用戶端識別碼）** 與 **Client Secret（服務金鑰，只顯示一次）**；在該 application 加一條 **Action＝Service Auth**、Include 此 token 的 policy（[Cloudflare 文件](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)）。Action 若是 Allow，Access 會把 Agent 轉向登入頁。
 
-   ```
-   {"cf-access-client-id": "<CLIENT_ID>", "cf-access-client-secret": "<CLIENT_SECRET>"}
-   ```
+   Agent 以官方標頭 `CF-Access-Client-Id`／`CF-Access-Client-Secret` 送出這兩個值，不需額外設定 `read_service_tokens_from_header`。
+4. 同一組 Service Token 全端共用；輪替＝在 Zero Trust 輪替或換新 token 後，各 Agent 重跑 `install.sh` 輸入新值。
 
-   Agent 會把驗證碼**原樣**放進 `Authorization` header，因此也可用任何你在 Zero Trust 層設定的其他 header 規則。
-4. 驗證碼為**全端共用單一碼**；輪替＝在 Zero Trust 換新 token 後，各 Agent 重跑 `install.sh` 輸入新碼。
-
-App 只綁 `127.0.0.1`，不讀取、不比對 `Authorization`；繞過 Tunnel 的直連不可達。
+App 只綁 `127.0.0.1`，不讀取、不比對任何驗證標頭；繞過 Tunnel 的直連不可達。
 
 ## host 端（面板）安裝
 
@@ -67,29 +63,30 @@ curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh
 
 1. 自動偵測平台（Linux-Deb／Linux-RPM／macOS）、架構、GPU 數、主網路介面並列出摘要。
 2. 補齊系統工具、確保 Node 24+。
-3. **結尾詢問 POST 目標主機名稱與 Auth 驗證碼**（驗證碼以隱藏輸入，不回顯、不寫日誌）。主機名稱如 `pulse.example.com`（自動補 `https://`），`http://` 只允許 `127.0.0.1`／`localhost`（本機開發）。
+3. **結尾詢問 POST 目標主機名稱、用戶端識別碼（Client ID）與服務金鑰（Client Secret）**（服務金鑰以隱藏輸入，不回顯、不寫日誌）。主機名稱如 `pulse.example.com`（自動補 `https://`），`http://` 只允許 `127.0.0.1`／`localhost`（本機開發）。下載時若 Access 回 3xx（轉登入頁）或 401／403，會直接指出是 Service Token 未被接受。
 4. 經 Zero Trust 從面板下載 `GET /agent/pulse-agent.mjs`（與伺服器同版本）安裝到 `/opt/pulse-agent/`（私有 Node.js 在 `/opt/pulse-agent/node`），寫入 `/etc/pulse-agent/agent.json`，註冊服務並立即啟動、開機自動啟動（安裝結尾會驗證並列出安裝位置）：
    - Linux：systemd `pulse-agent.service`（enabled），以系統使用者 `pulse-agent` 執行；日誌 `journalctl -u pulse-agent -f`
    - macOS：launchd `/Library/LaunchDaemons/js-package.pulse-agent.plist`（RunAtLoad＋KeepAlive，安裝時解除先前的 `launchctl disable`），以 root 執行（Apple Silicon GPU 指標所需）；日誌 `tail -f /var/log/pulse-agent.log`
 
-非互動安裝（驗證碼不要寫在命令列參數，會留在 shell history 與 process list）：
+非互動安裝（服務金鑰不要寫在命令列參數，會留在 shell history 與 process list）：
 
 ```bash
-# 驗證碼放在只有 root 可讀的檔案，安裝後刪除
+# 服務金鑰放在只有 root 可讀的檔案，安裝後刪除
 curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh \
-  | sudo bash -s -- --server pulse.example.com --auth-file /root/pulse-auth.txt
+  | sudo bash -s -- --server pulse.example.com --client-id <CLIENT_ID> --client-secret-file /root/pulse-secret.txt
 ```
 
-以 root 身分執行時也可改用環境變數 `PULSE_SERVER`、`PULSE_AUTH`。
+以 root 身分執行時也可改用環境變數 `PULSE_SERVER`、`PULSE_CLIENT_ID`、`PULSE_CLIENT_SECRET`。
 
-重跑 `install.sh` 即升級 Agent／輪替驗證碼（`diskPath`、`netInterface` 會保留）。
+重跑 `install.sh` 即升級 Agent／輪替 Service Token（`diskPath`、`netInterface` 會保留）。
 
 `/etc/pulse-agent/agent.json`：
 
 | 欄位 | 說明 |
 |---|---|
 | `serverUrl` | 面板網址（https） |
-| `authorization` | `Authorization` header 原樣值（Auth 驗證碼） |
+| `accessClientId` | Service Token 的 Client ID，以 `CF-Access-Client-Id` 送出 |
+| `accessClientSecret` | Service Token 的 Client Secret，以 `CF-Access-Client-Secret` 送出 |
 | `diskPath` | 主磁碟掛載點，預設 `/` |
 | `netInterface` | 網路介面；空字串＝預設路由的介面 |
 
@@ -157,7 +154,7 @@ npm run dev:web       # 面板開發伺服器（代理到 127.0.0.1:8080）
 本機試跑 Agent（不安裝服務）：
 
 ```bash
-echo '{"serverUrl":"http://127.0.0.1:8080","authorization":"dev"}' > /tmp/agent.json
+echo '{"serverUrl":"http://127.0.0.1:8080","accessClientId":"dev","accessClientSecret":"dev"}' > /tmp/agent.json
 node dist/agent/pulse-agent.mjs --config /tmp/agent.json
 ```
 

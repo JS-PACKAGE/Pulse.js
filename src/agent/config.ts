@@ -3,8 +3,12 @@ import { readFile } from 'node:fs/promises';
 /** /etc/pulse-agent/agent.json, written by install.sh. */
 export interface AgentConfig {
   serverUrl: URL;
-  /** Sent verbatim as the `Authorization` header; checked only by Cloudflare Zero Trust. Never log it. */
-  authorization: string;
+  /**
+   * Cloudflare Access service token, sent as `CF-Access-Client-Id` / `CF-Access-Client-Secret`;
+   * checked only by Cloudflare Zero Trust. Never log the secret.
+   */
+  accessClientId: string;
+  accessClientSecret: string;
   diskPath: string;
   /** Empty = interface of the default route. */
   netInterface: string;
@@ -32,9 +36,8 @@ export function parseAgentConfig(raw: unknown): AgentConfig {
     throw new Error('agent config: serverUrl must not carry credentials or a query string');
   }
 
-  const auth = doc.authorization;
-  if (typeof auth !== 'string' || auth.trim() === '') throw new Error('agent config: authorization is required');
-  if (/[\r\n]/.test(auth)) throw new Error('agent config: authorization must be a single line');
+  const accessClientId = headerValue(doc.accessClientId, 'accessClientId');
+  const accessClientSecret = headerValue(doc.accessClientSecret, 'accessClientSecret');
 
   const diskPath = doc.diskPath ?? '/';
   const netInterface = doc.netInterface ?? '';
@@ -42,7 +45,13 @@ export function parseAgentConfig(raw: unknown): AgentConfig {
   if (typeof netInterface !== 'string' || !/^[\w.:-]*$/.test(netInterface)) {
     throw new Error('agent config: netInterface must be an interface name or ""');
   }
-  return { serverUrl, authorization: auth.trim(), diskPath, netInterface };
+  return { serverUrl, accessClientId, accessClientSecret, diskPath, netInterface };
+}
+
+function headerValue(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') throw new Error(`agent config: ${field} is required`);
+  if (/[\r\n]/.test(value)) throw new Error(`agent config: ${field} must be a single line`);
+  return value.trim();
 }
 
 export async function loadAgentConfig(path: string): Promise<AgentConfig> {
@@ -56,7 +65,7 @@ export async function loadAgentConfig(path: string): Promise<AgentConfig> {
   try {
     raw = JSON.parse(text);
   } catch {
-    // Do not echo the parser message: it may quote file content, i.e. the auth code.
+    // Do not echo the parser message: it may quote file content, i.e. the client secret.
     throw new Error(`agent config ${path} is not valid JSON`);
   }
   return parseAgentConfig(raw);

@@ -7,7 +7,7 @@ import { loadAgentConfig } from './config.ts';
 import { buildRegistration, createCollectors, detectPlatform } from './detect.ts';
 import { createRunCommand } from './exec.ts';
 
-// Never log the Authorization value (AGENTS.md security rule 8).
+// Never log the client secret (AGENTS.md security rule 8).
 const log = (msg: string): void => console.log(`${new Date().toISOString()} [pulse-agent] ${msg}`);
 
 async function main(): Promise<void> {
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   log(`Pulse.js agent ${PULSE_VERSION} on ${platform.osVersion} (${platform.osFamily}/${registration.arch}), ${gpus.length} GPU(s), server ${config.serverUrl.origin}`);
 
   const agent = new Agent({
-    client: new PulseClient(config.serverUrl, config.authorization),
+    client: new PulseClient(config.serverUrl, { clientId: config.accessClientId, clientSecret: config.accessClientSecret }),
     system,
     gpu,
     updates: createUpdateChecker(platform.osFamily, run),

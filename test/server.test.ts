@@ -1,3 +1,4 @@
+import { createServer, type IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
 import { networkInterfaces } from 'node:os';
@@ -35,6 +36,8 @@ const healthy: SystemMetrics = {
   netTxKbps: 5,
 };
 
+const token = { clientId: 'test.access', clientSecret: 'test-secret' };
+
 const running: Array<() => Promise<void>> = [];
 afterEach(async () => {
   while (running.length) await running.pop()?.();
@@ -63,7 +66,7 @@ describe('Gate 1 flow with a Mock Agent (examples 1–2)', () => {
     });
     const system = new MockSystemCollector();
     const agent = new Agent({
-      client: new PulseClient(new URL(base), 'Bearer zero-trust-only'),
+      client: new PulseClient(new URL(base), token),
       system,
       gpu: new MockGpuCollector(MOCK_GPU_CASES.dual.map((g) => ({ ...g, utilPercent: 10 }))),
       updates: new MockUpdateChecker(),
@@ -116,7 +119,7 @@ describe('Gate 1 flow with a Mock Agent (examples 1–2)', () => {
     const updates = new MockUpdateChecker({ pending: 12, security: 3 });
     const logs: string[] = [];
     const agent = new Agent({
-      client: new PulseClient(new URL(base), 'x'),
+      client: new PulseClient(new URL(base), token),
       system: new MockSystemCollector(),
       gpu: new MockGpuCollector([]),
       updates,
@@ -160,7 +163,7 @@ describe('report endpoint', () => {
       raw.agent.minReportIntervalSec = 0;
     });
     const agent = new Agent({
-      client: new PulseClient(new URL(first.base), 'x'),
+      client: new PulseClient(new URL(first.base), token),
       system: new MockSystemCollector(),
       gpu: new MockGpuCollector([]),
       updates: new MockUpdateChecker(),
@@ -189,13 +192,46 @@ describe('report endpoint', () => {
     expect(JSON.stringify(bad.body)).not.toMatch(/at .*\.ts|SyntaxError/);
   });
 
-  it('never compares the Authorization header (Zero Trust is the only check)', async () => {
+  it('never compares the Cloudflare Access headers (Zero Trust is the only check)', async () => {
     const { json } = await boot();
     const statuses = [];
-    for (const headers of [{}, { authorization: 'wrong' }, { authorization: 'Bearer right' }]) {
+    for (const headers of [
+      {},
+      { 'cf-access-client-id': 'wrong.access', 'cf-access-client-secret': 'wrong' },
+      { 'cf-access-client-id': token.clientId, 'cf-access-client-secret': token.clientSecret },
+    ]) {
       statuses.push((await json('/api/agent/register', { method: 'POST', headers, body: JSON.stringify(registration) })).status);
     }
     expect(statuses).toEqual([201, 200, 200]);
+  });
+});
+
+describe('agent client', () => {
+  it('sends the service token as CF-Access-Client-Id / CF-Access-Client-Secret and nothing in Authorization', async () => {
+    let seen: IncomingHttpHeaders = {};
+    const server = createServer((req, res) => {
+      seen = req.headers;
+      res.writeHead(201, { 'content-type': 'application/json' }).end('{"hostId":1,"reportIntervalSec":30}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    running.push(() => new Promise((resolve) => server.close(() => resolve())));
+    const { port } = server.address() as AddressInfo; // TCP listen() always yields AddressInfo
+
+    await new PulseClient(new URL(`http://127.0.0.1:${port}`), token).register(registration);
+    expect(seen['cf-access-client-id']).toBe(token.clientId);
+    expect(seen['cf-access-client-secret']).toBe(token.clientSecret);
+    expect(seen.authorization).toBeUndefined();
+  });
+
+  it('treats an Access login redirect as a rejection instead of following it', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(302, { location: 'https://team.cloudflareaccess.com/cdn-cgi/access/login/x' }).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    running.push(() => new Promise((resolve) => server.close(() => resolve())));
+    const { port } = server.address() as AddressInfo; // TCP listen() always yields AddressInfo
+
+    await expect(new PulseClient(new URL(`http://127.0.0.1:${port}`), token).register(registration)).rejects.toMatchObject({ status: 302 });
   });
 });
 
@@ -353,7 +389,7 @@ describe('host deletion', () => {
       raw.agent.minReportIntervalSec = 0;
     });
     const agent = new Agent({
-      client: new PulseClient(new URL(base), 'x'),
+      client: new PulseClient(new URL(base), token),
       system: new MockSystemCollector(),
       gpu: new MockGpuCollector([]),
       updates: new MockUpdateChecker(),

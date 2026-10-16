@@ -5,25 +5,28 @@ set -euo pipefail
 usage() {
   cat <<'HELP'
 [pulse] Pulse.js Agent 安裝／升級（需 root）
-用法：bash install.sh [--server <host或URL>] [--auth-file <path>]
+用法：bash install.sh [--server <host或URL>] [--client-id <用戶端識別碼>] [--client-secret-file <path>]
       curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh | sudo bash -s -- [參數]
-環境變數：PULSE_SERVER、PULSE_AUTH。未提供時從 /dev/tty 詢問。
-Auth 僅支援環境變數、檔案或隱藏輸入；不接受 --auth。
+環境變數：PULSE_SERVER、PULSE_CLIENT_ID、PULSE_CLIENT_SECRET。未提供時從 /dev/tty 詢問。
+用戶端識別碼／服務金鑰＝Cloudflare Access Service Token 的 Client ID／Client Secret。
+服務金鑰僅支援環境變數、檔案或隱藏輸入；不接受 --client-secret。
 HELP
 }
 log() { printf '[pulse] %s\n' "$*"; }
 die() { printf '[pulse] 錯誤：%s\n' "$*" >&2; exit 1; }
 server=${PULSE_SERVER:-}
-auth=${PULSE_AUTH:-}
-unset PULSE_AUTH
-export -n auth
-_auth_file=''
+client_id=${PULSE_CLIENT_ID:-}
+client_secret=${PULSE_CLIENT_SECRET:-}
+unset PULSE_CLIENT_SECRET
+export -n client_secret
+_secret_file=''
 while (($#)); do
   case "$1" in
     --help|-h) usage; exit 0 ;;
     --server) (($# >= 2)) || die '--server 缺少值'; server=$2; shift 2 ;;
-    --auth-file) (($# >= 2)) || die '--auth-file 缺少路徑'; _auth_file=$2; shift 2 ;;
-    *) die '未知參數；請使用 --help（不支援 --auth）' ;;
+    --client-id) (($# >= 2)) || die '--client-id 缺少值'; client_id=$2; shift 2 ;;
+    --client-secret-file) (($# >= 2)) || die '--client-secret-file 缺少路徑'; _secret_file=$2; shift 2 ;;
+    *) die '未知參數；請使用 --help（不支援 --client-secret）' ;;
   esac
 done
 if ((EUID != 0)); then
@@ -148,25 +151,35 @@ log '=== 準備 Node.js ==='
 ensure_node
 log "使用 Node.js：$("$node_bin" --version)"
 
-log '=== 設定上報目標與驗證碼 ==='
-if [[ -n $_auth_file ]]; then
-  [[ -r $_auth_file ]] || die '無法讀取 --auth-file'
-  auth=$(cat -- "$_auth_file")
+log '=== 設定上報目標與 Service Token ==='
+if [[ -n $_secret_file ]]; then
+  [[ -r $_secret_file ]] || die '無法讀取 --client-secret-file'
+  client_secret=$(cat -- "$_secret_file")
 fi
-if [[ -z $server || -z $auth ]]; then
-  if ! { exec 3<>/dev/tty; } 2>/dev/null; then die '沒有可用終端；請提供 --server / PULSE_SERVER 與 --auth-file / PULSE_AUTH'; fi
+if [[ -z $server || -z $client_id || -z $client_secret ]]; then
+  if ! { exec 3<>/dev/tty; } 2>/dev/null; then
+    die '沒有可用終端；請提供 --server、--client-id、--client-secret-file（或 PULSE_SERVER、PULSE_CLIENT_ID、PULSE_CLIENT_SECRET）'
+  fi
   if [[ -z $server ]]; then
     printf '[pulse] POST 目標主機名稱或 URL：' >&3
     IFS= read -r server <&3 || die '無法讀取主機名稱'
   fi
-  if [[ -z $auth ]]; then
-    printf '[pulse] Auth 驗證碼（不回顯）：' >&3
-    IFS= read -rs auth <&3 || die '無法讀取 Auth 驗證碼'
+  if [[ -z $client_id ]]; then
+    printf '[pulse] 用戶端識別碼（Client ID）：' >&3
+    IFS= read -r client_id <&3 || die '無法讀取用戶端識別碼'
+  fi
+  if [[ -z $client_secret ]]; then
+    printf '[pulse] 服務金鑰（Client Secret，不回顯）：' >&3
+    IFS= read -rs client_secret <&3 || die '無法讀取服務金鑰'
     printf '\n' >&3
   fi
   exec 3>&-
 fi
-[[ -n $auth && $auth != *$'\r'* && $auth != *$'\n'* ]] || die 'Auth 驗證碼不可為空或包含換行'
+# 去除貼上時夾帶的前後空白。
+client_id=${client_id#"${client_id%%[![:space:]]*}"}; client_id=${client_id%"${client_id##*[![:space:]]}"}
+client_secret=${client_secret#"${client_secret%%[![:space:]]*}"}; client_secret=${client_secret%"${client_secret##*[![:space:]]}"}
+[[ -n $client_id && $client_id != *[[:cntrl:]]* ]] || die '用戶端識別碼不可為空或包含控制字元'
+[[ -n $client_secret && $client_secret != *[[:cntrl:]]* ]] || die '服務金鑰不可為空或包含控制字元'
 export PULSE_INSTALL_SERVER=$server
 if ! server=$("$node_bin" -e '
 try {
@@ -182,13 +195,20 @@ try {
 unset PULSE_INSTALL_SERVER
 header=$(mktemp "$work/header.XXXXXX")
 chmod 600 "$header"
-printf 'Authorization: %s\n' "$auth" >"$header"
+printf 'CF-Access-Client-Id: %s\nCF-Access-Client-Secret: %s\n' "$client_id" "$client_secret" >"$header"
 log '=== 下載 Agent ==='
-if ! curl -fsS --proto '=https,http' -H "@$header" "$server/agent/pulse-agent.mjs" -o "$work/pulse-agent.mjs" 2>"$work/download-error"; then
-  die 'Agent 下載失敗；401/403 通常表示 Cloudflare Zero Trust 拒絕，請檢查目標與驗證碼'
+if ! http_code=$(curl -sS --proto '=https,http' -H "@$header" -o "$work/pulse-agent.mjs" -w '%{http_code}' \
+  "$server/agent/pulse-agent.mjs" 2>"$work/download-error"); then
+  die 'Agent 下載失敗：無法連線到面板，請檢查主機名稱與網路'
 fi
+case $http_code in
+  2??) ;;
+  3??) die 'Cloudflare Access 轉向登入頁：Service Token 未被接受。請確認該 Access application 有一條 Action 為 Service Auth、包含此 token 的 policy，並檢查用戶端識別碼與服務金鑰' ;;
+  401|403) die "Cloudflare Zero Trust 拒絕（HTTP ${http_code}）：請檢查用戶端識別碼、服務金鑰與 Service Auth policy" ;;
+  *) die "Agent 下載失敗（HTTP ${http_code}）" ;;
+esac
 IFS= read -r first_line <"$work/pulse-agent.mjs" || true
-[[ $first_line == '#!/usr/bin/env node' ]] || die '下載內容不是 Pulse Agent（可能收到 Access 登入頁）'
+[[ $first_line == '#!/usr/bin/env node' ]] || die '下載內容不是 Pulse Agent；請確認目標是 Pulse 面板'
 mkdir -p /opt/pulse-agent /etc/pulse-agent
 chmod 755 /opt/pulse-agent
 if [[ $family != macos ]]; then
@@ -205,20 +225,21 @@ else
   chmod 700 /etc/pulse-agent
 fi
 install -m 755 "$work/pulse-agent.mjs" /opt/pulse-agent/pulse-agent.mjs
-export PULSE_INSTALL_SERVER=$server PULSE_INSTALL_AUTH=$auth
+export PULSE_INSTALL_SERVER=$server PULSE_INSTALL_CLIENT_ID=$client_id PULSE_INSTALL_CLIENT_SECRET=$client_secret
 if ! "$node_bin" -e '
 const fs = require("node:fs");
 try {
   const path = "/etc/pulse-agent/agent.json";
   const old = fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, "utf8")) : {};
-  const config = { serverUrl: process.env.PULSE_INSTALL_SERVER, authorization: process.env.PULSE_INSTALL_AUTH,
+  const config = { serverUrl: process.env.PULSE_INSTALL_SERVER,
+    accessClientId: process.env.PULSE_INSTALL_CLIENT_ID, accessClientSecret: process.env.PULSE_INSTALL_CLIENT_SECRET,
     diskPath: typeof old.diskPath === "string" ? old.diskPath : "/",
     netInterface: typeof old.netInterface === "string" ? old.netInterface : "" };
   fs.writeFileSync(path + ".new", JSON.stringify(config, null, 2) + "\n", {mode: 0o600});
   fs.renameSync(path + ".new", path);
 } catch { process.exit(1); }
 '; then die '無法更新 Agent 設定；請檢查原設定 JSON 與目錄權限'; fi
-unset PULSE_INSTALL_SERVER PULSE_INSTALL_AUTH auth
+unset PULSE_INSTALL_SERVER PULSE_INSTALL_CLIENT_ID PULSE_INSTALL_CLIENT_SECRET client_secret
 rm -f -- "$header"
 
 log '=== 啟用背景服務 ==='

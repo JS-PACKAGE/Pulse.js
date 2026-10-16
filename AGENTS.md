@@ -55,13 +55,13 @@
 ## 5. 安全性（PLAN.md §6，逐條對應，不得放寬）
 
 1. **傳輸強制 TLS**：上報與 API 一律 HTTPS（經 Cloudflare Tunnel）；明文 HTTP 僅限本機開發。→ Agent 設定只接受 `https://`，`http://` 僅限 loopback 主機（`src/agent/config.ts`、`install.sh`）。
-2. **驗證於 Cloudflare Zero Trust 層進行**：對外流量經 Tunnel＋Access 以 Auth 驗證碼驗證（`Authorization` header），缺／錯一律該層拒絕；App 端完全信任該層結果、不做任何比對；且 App 不得繞過該層直達（監聽綁定 loopback 或防火牆限定 Tunnel 來源）；驗證碼不得放 URL query 或 body，不入日誌。→ `server.host` 預設 `127.0.0.1`，非 loopback 需明確 `allowExternalBind: true` 否則拒絕啟動；伺服器程式**不得讀取** `Authorization` header。
+2. **驗證於 Cloudflare Zero Trust 層進行**：對外流量經 Tunnel＋Access 以 Service Token 驗證（`CF-Access-Client-Id`／`CF-Access-Client-Secret` header），缺／錯一律該層拒絕；App 端完全信任該層結果、不做任何比對；且 App 不得繞過該層直達（監聽綁定 loopback 或防火牆限定 Tunnel 來源）；服務金鑰不得放 URL query 或 body，不入日誌。→ `server.host` 預設 `127.0.0.1`，非 loopback 需明確 `allowExternalBind: true` 否則拒絕啟動；伺服器程式**不得讀取** `CF-Access-*` 與 `Authorization` header。
 3. **面板存取由 Cloudflare Zero Trust Access 驗證；App 端預設關閉匿名存取**。→ 預設只綁 loopback，唯一入口是同機的 cloudflared。
-4. **驗證唯一真值來源＝Cloudflare Zero Trust 層**：Auth 驗證碼只存在該層設定，App 端不儲存、不比對、不重複實作驗證邏輯；驗證碼為單一碼全端共用，輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新。→ 只有 Agent 端 `agent.json`（0640／0600）保存該值以便送出 header。
+4. **驗證唯一真值來源＝Cloudflare Zero Trust 層**：Service Token 只存在該層設定，App 端不儲存、不比對、不重複實作驗證邏輯；同一組 token 全端共用，輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新。→ 只有 Agent 端 `agent.json`（0640／0600）保存用戶端識別碼與服務金鑰以便送出 header。
 5. **輸入驗證＋尺寸上限**：JSON schema 驗證、payload 上限 64KB、hostname 正規化防注入。→ `src/shared/validate.ts`；`limits.maxPayloadBytes` 上限 65536（超過拒絕啟動），超限回 413。
 6. **每 host 回報頻率限制**（預設每 10 秒 1 筆上限）；伺服器端容忍亂序、以 ts 遞增寫入。→ `agent.minReportIntervalSec`，超頻回 429＋`Retry-After`；狀態永遠依 ts 最新的樣本判定，遲到的舊樣本只入庫不覆蓋狀態。
 7. **SQL 一律 prepared statement，禁字串拼接**。→ SQL 只寫在 `src/server/store.ts`／`db.ts`，參數一律綁定。
-8. **憑證（Auth 驗證碼／密碼）不入日誌；對外錯誤一律 generic，不洩內部堆疊**。→ 錯誤 body 只有 `{error, details?}`；500 細節只寫伺服器日誌；Agent 與安裝腳本不得印出驗證碼（含 JSON 解析錯誤訊息）。
+8. **憑證（服務金鑰／密碼）不入日誌；對外錯誤一律 generic，不洩內部堆疊**。→ 錯誤 body 只有 `{error, details?}`；500 細節只寫伺服器日誌；Agent 與安裝腳本不得印出服務金鑰（含 JSON 解析錯誤訊息）。
 9. **依賴釘版＋lockfile；`npm audit` 納入 Gate 檢核**。
 10. **資源防護**：SQLite 設 WAL 與 busy_timeout、樣本表滾動清理、上報端點背壓（429）。→ `retention.days`、`retention.cleanupIntervalHours`；SSE 每 25 秒 keep-alive。
 

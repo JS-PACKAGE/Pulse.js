@@ -70,7 +70,7 @@ export function createApp(deps: AppDeps): express.Express {
     next();
   });
   // Authentication happens entirely in Cloudflare Zero Trust before requests reach us
-  // (AGENTS.md rules 2 and 4): the Authorization header is deliberately never read here.
+  // (AGENTS.md rules 2 and 4): the CF-Access-* / Authorization headers are deliberately never read here.
   api.use(express.json({ limit: config.limits.maxPayloadBytes, type: 'application/json' }));
 
   api.get('/health', (_req, res) => {

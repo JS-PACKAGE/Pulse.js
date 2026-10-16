@@ -122,7 +122,7 @@ describe('server config', () => {
 });
 
 describe('agent config', () => {
-  const base = { serverUrl: 'https://pulse.example.com', authorization: '{"cf-access-client-id":"a","cf-access-client-secret":"b"}' };
+  const base = { serverUrl: 'https://pulse.example.com', accessClientId: 'abc.access', accessClientSecret: 'secret' };
 
   it('allows https anywhere and http only on loopback', () => {
     expect(parseAgentConfig(base).serverUrl.href).toBe('https://pulse.example.com/');
@@ -131,8 +131,10 @@ describe('agent config', () => {
     expect(() => parseAgentConfig({ ...base, serverUrl: 'https://pulse.example.com/?token=x' })).toThrow(/query/);
   });
 
-  it('requires a single-line authorization value', () => {
-    expect(() => parseAgentConfig({ ...base, authorization: ' ' })).toThrow(/authorization/);
-    expect(() => parseAgentConfig({ ...base, authorization: 'a\r\nX-Injected: 1' })).toThrow(/single line/);
+  it('requires both service token fields as single-line values', () => {
+    expect(parseAgentConfig(base)).toMatchObject({ accessClientId: 'abc.access', accessClientSecret: 'secret' });
+    expect(() => parseAgentConfig({ ...base, accessClientId: ' ' })).toThrow(/accessClientId/);
+    expect(() => parseAgentConfig({ ...base, accessClientSecret: undefined })).toThrow(/accessClientSecret/);
+    expect(() => parseAgentConfig({ ...base, accessClientSecret: 'a\r\nX-Injected: 1' })).toThrow(/single line/);
   });
 });
