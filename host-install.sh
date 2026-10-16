@@ -122,7 +122,9 @@ mkdir "$work/staging"
 tar -xzf "$work/source.tar.gz" -C "$work/staging" --strip-components=1 --no-same-owner
 (
   cd "$work/staging"
-  npm ci
+  # better-sqlite3 內建各平台 prebuild；Node 22 附的 npm 10 不理會其 "gypfile": false，
+  # 會改跑 node-gyp rebuild（需要 make／編譯器）。略過 install script 也避免以 root 執行套件腳本。
+  npm ci --ignore-scripts
   npm run build
   npm prune --omit=dev
 )

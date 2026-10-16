@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-insta
 
 ```bash
 git clone https://github.com/JS-PACKAGE/Pulse.js.git && cd Pulse.js
-npm ci && npm run build
+npm ci --ignore-scripts && npm run build   # --ignore-scripts：使用 better-sqlite3 內建 prebuild，免編譯工具
 cp config.yaml /etc/pulse/config.yaml   # 依需要修改 database.path 等
 node dist/server/main.mjs --config /etc/pulse/config.yaml
 ```
