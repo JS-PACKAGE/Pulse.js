@@ -1,0 +1,50 @@
+# Pulse.js server configuration (template).
+# host-install.sh copies this file to /etc/pulse/config.yaml on first install and never
+# overwrites it afterwards. Relative paths resolve against this file's directory.
+
+server:
+  # Bind address. Keep loopback so only cloudflared (Cloudflare Tunnel) on this machine can
+  # reach the app; Zero Trust Access is the only authentication layer (AGENTS.md rule 2).
+  host: 127.0.0.1
+  port: 8080
+  # Binding a non-loopback address is refused unless this is true. Only enable it when a
+  # firewall restricts the port to the Tunnel source.
+  allowExternalBind: false
+
+tls:
+  # TLS normally terminates at the Cloudflare edge and cloudflared talks to the app over
+  # loopback. Enable to serve HTTPS directly (certificate/key paths are PEM files).
+  enabled: false
+  certFile: ""
+  keyFile: ""
+
+database:
+  path: ./data/pulse.db
+  busyTimeoutMs: 5000
+
+agent:
+  # Report period handed to agents at registration.
+  reportIntervalSec: 30
+  # A host with no report for this long is offline (= abnormal).
+  offlineAfterSec: 90
+  # Per-host rate limit: reports arriving faster than this get HTTP 429.
+  minReportIntervalSec: 10
+
+retention:
+  # MetricSample / GpuSample rows older than this are deleted.
+  days: 30
+  cleanupIntervalHours: 24
+
+limits:
+  maxPayloadBytes: 65536
+
+# A host is "alert" when any latest value reaches its warn level; crit marks severity.
+# Percentages are 0-100; network rates are kilobits per second.
+thresholds:
+  cpuLoadPercent: { warn: 85, crit: 95 }
+  memUsedPercent: { warn: 85, crit: 95 }
+  diskUsedPercent: { warn: 85, crit: 90 }
+  gpuUtilPercent: { warn: 90, crit: 98 }
+  gpuMemUsedPercent: { warn: 90, crit: 98 }
+  netRxKbps: { warn: 800000, crit: 950000 }
+  netTxKbps: { warn: 800000, crit: 950000 }
