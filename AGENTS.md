@@ -4,7 +4,7 @@
 
 ## 1. 語言與執行環境
 
-- 全端 **TypeScript**，執行環境 **Node.js v22 以上**（`package.json` `engines`）。
+- 全端 **TypeScript**，執行環境 **Node.js v24 以上**（`package.json` `engines`）。
 - `strict`、`noUncheckedIndexedAccess`；`tsc` 只做型別檢查（`noEmit`），建置交給 esbuild／Vite。
 - ES modules；相對 import 一律帶 `.ts` 副檔名（web 端元件可省略，由 Vite 解析）。
 - 依賴最少化：伺服器只用 `express`、`better-sqlite3`、`yaml`；面板只用 `react`、`react-dom`；**Agent 零第三方 runtime 依賴**（Node 標準庫＋子行程）。新增依賴前須說明理由並釘版。

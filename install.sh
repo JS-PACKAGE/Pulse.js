@@ -112,7 +112,7 @@ if ((missing)); then
   esac
 fi
 
-node_ok() { [[ -x $1 ]] && "$1" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' >/dev/null 2>&1; }
+node_ok() { [[ -x $1 ]] && "$1" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' >/dev/null 2>&1; }
 ensure_node() {
   local candidate filename='' checksum='' sum file extra actual extension
   candidate=$(command -v node || true)
@@ -125,17 +125,17 @@ ensure_node() {
     esac
   fi
   if node_ok /opt/pulse-agent/node/bin/node; then node_bin=/opt/pulse-agent/node/bin/node; return; fi
-  log '下載並校驗官方 Node.js 22'
+  log '下載並校驗官方 Node.js 24'
   extension=tar.xz
   [[ $node_os != darwin ]] || extension=tar.gz
-  curl -fsSL --proto '=https' https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o "$work/SHASUMS256.txt"
+  curl -fsSL --proto '=https' https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt -o "$work/SHASUMS256.txt"
   while read -r sum file extra; do
-    if [[ $file == node-v22.*-"$node_os"-"$arch"."$extension" && $sum =~ ^[[:xdigit:]]{64}$ && -z ${extra:-} ]]; then
+    if [[ $file == node-v24.*-"$node_os"-"$arch"."$extension" && $sum =~ ^[[:xdigit:]]{64}$ && -z ${extra:-} ]]; then
       filename=$file; checksum=$sum; break
     fi
   done <"$work/SHASUMS256.txt"
   [[ -n $filename && $filename != */* ]] || die '官方清單中沒有相容的 Node.js 套件'
-  curl -fsSL --proto '=https' "https://nodejs.org/dist/latest-v22.x/$filename" -o "$work/node-archive"
+  curl -fsSL --proto '=https' "https://nodejs.org/dist/latest-v24.x/$filename" -o "$work/node-archive"
   if [[ $node_os == darwin ]]; then actual=$(shasum -a 256 "$work/node-archive"); else actual=$(sha256sum "$work/node-archive"); fi
   [[ ${actual%% *} == "$checksum" ]] || die 'Node.js SHA256 校驗失敗，已中止'
   mkdir -p /opt/pulse-agent/node

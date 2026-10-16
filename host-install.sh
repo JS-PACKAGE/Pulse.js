@@ -102,7 +102,7 @@ else
   apt-get update
   apt-get install -y curl ca-certificates tar xz-utils
 fi
-node_ok() { [[ -x $1 ]] && "$1" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' >/dev/null 2>&1; }
+node_ok() { [[ -x $1 ]] && "$1" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' >/dev/null 2>&1; }
 ensure_node() {
   local candidate filename='' checksum='' sum file extra actual
   candidate=$(command -v node || true)
@@ -115,15 +115,15 @@ ensure_node() {
     esac
   fi
   if node_ok /opt/pulse/node/bin/node; then node_bin=/opt/pulse/node/bin/node; return; fi
-  log '下載並校驗官方 Node.js 22'
-  curl -fsSL --proto '=https' https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o "$work/SHASUMS256.txt"
+  log '下載並校驗官方 Node.js 24'
+  curl -fsSL --proto '=https' https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt -o "$work/SHASUMS256.txt"
   while read -r sum file extra; do
-    if [[ $file == node-v22.*-"$node_os"-"$arch"."$node_ext" && $sum =~ ^[[:xdigit:]]{64}$ && -z ${extra:-} ]]; then
+    if [[ $file == node-v24.*-"$node_os"-"$arch"."$node_ext" && $sum =~ ^[[:xdigit:]]{64}$ && -z ${extra:-} ]]; then
       filename=$file; checksum=$sum; break
     fi
   done <"$work/SHASUMS256.txt"
   [[ -n $filename && $filename != */* ]] || die '官方清單中沒有相容的 Node.js 套件'
-  curl -fsSL --proto '=https' "https://nodejs.org/dist/latest-v22.x/$filename" -o "$work/node-archive"
+  curl -fsSL --proto '=https' "https://nodejs.org/dist/latest-v24.x/$filename" -o "$work/node-archive"
   if [[ $family == macos ]]; then actual=$(shasum -a 256 "$work/node-archive"); else actual=$(sha256sum "$work/node-archive"); fi
   [[ ${actual%% *} == "$checksum" ]] || die 'Node.js SHA256 校驗失敗，已中止'
   mkdir -p /opt/pulse/node
@@ -147,7 +147,7 @@ mkdir "$work/staging"
 tar -xzf "$work/source.tar.gz" -C "$work/staging" --strip-components=1 --no-same-owner
 (
   cd "$work/staging"
-  # better-sqlite3 內建各平台 prebuild；Node 22 附的 npm 10 不理會其 "gypfile": false，
+  # better-sqlite3 內建各平台 prebuild；npm 10 不理會其 "gypfile": false，
   # 會改跑 node-gyp rebuild（需要 make／編譯器）。略過 install script 也避免以 root 執行套件腳本。
   npm ci --ignore-scripts
   npm run build

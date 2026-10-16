@@ -16,7 +16,7 @@
 
 | 項目 | 說明 |
 |---|---|
-| Node.js | v22 以上（安裝腳本在缺少時會下載官方 Node 22 並以 SHA-256 校驗，裝在私有目錄） |
+| Node.js | v24 以上（安裝腳本在缺少時會下載官方 Node 24 並以 SHA-256 校驗，裝在私有目錄） |
 | host 端 | Ubuntu（systemd）或 macOS（launchd）；x64／arm64 |
 | Agent 端 | Debian/Ubuntu 系、RHEL 系（Rocky／Alma／CentOS／Fedora／Amazon Linux）、macOS；x64／arm64 |
 | cloudflared | **自備**，`host-install.sh` 不代裝 |
@@ -43,7 +43,7 @@ App 只綁 `127.0.0.1`，不讀取、不比對 `Authorization`；繞過 Tunnel �
 curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-install.sh | sudo bash
 ```
 
-- 偵測平台（Ubuntu 或 macOS，其他系統會明確提示並中止）→ 補齊前置工具（Ubuntu：`apt-get install curl ca-certificates tar xz-utils`；macOS：使用內建工具）→ 確保 Node 22+（需要時裝私有版本到 `/opt/pulse/node`，SHA-256 校驗）→ 下載原始碼建置 → 部署到 `/opt/pulse/app` → 註冊並啟動服務 → 健康檢查 `GET /api/health` → 驗證開機自啟並列出安裝位置。
+- 偵測平台（Ubuntu 或 macOS，其他系統會明確提示並中止）→ 補齊前置工具（Ubuntu：`apt-get install curl ca-certificates tar xz-utils`；macOS：使用內建工具）→ 確保 Node 24+（需要時裝私有版本到 `/opt/pulse/node`，SHA-256 校驗）→ 下載原始碼建置 → 部署到 `/opt/pulse/app` → 註冊並啟動服務 → 健康檢查 `GET /api/health` → 驗證開機自啟並列出安裝位置。
   - Ubuntu：systemd `pulse.service`（enabled），以系統使用者 `pulse` 執行；日誌 `journalctl -u pulse -f`
   - macOS：launchd `/Library/LaunchDaemons/js-package.pulse.plist`（RunAtLoad＋KeepAlive，安裝時解除先前的 `launchctl disable`），以隱藏系統帳號 `_pulse` 執行（不存在時以 `dscl` 建立，ID 取 300–499 未使用者）；日誌 `tail -f /var/log/pulse.log`
 - 設定檔 `/etc/pulse/config.yaml`（首次安裝由範本複製，資料庫改到 `/var/lib/pulse/pulse.db`；之後重跑**不覆寫**）。
@@ -66,7 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh
 ```
 
 1. 自動偵測平台（Linux-Deb／Linux-RPM／macOS）、架構、GPU 數、主網路介面並列出摘要。
-2. 補齊系統工具、確保 Node 22+。
+2. 補齊系統工具、確保 Node 24+。
 3. **結尾詢問 POST 目標主機名稱與 Auth 驗證碼**（驗證碼以隱藏輸入，不回顯、不寫日誌）。主機名稱如 `pulse.example.com`（自動補 `https://`），`http://` 只允許 `127.0.0.1`／`localhost`（本機開發）。
 4. 經 Zero Trust 從面板下載 `GET /agent/pulse-agent.mjs`（與伺服器同版本）安裝到 `/opt/pulse-agent/`（私有 Node.js 在 `/opt/pulse-agent/node`），寫入 `/etc/pulse-agent/agent.json`，註冊服務並立即啟動、開機自動啟動（安裝結尾會驗證並列出安裝位置）：
    - Linux：systemd `pulse-agent.service`（enabled），以系統使用者 `pulse-agent` 執行；日誌 `journalctl -u pulse-agent -f`

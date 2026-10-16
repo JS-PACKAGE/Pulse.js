@@ -8,7 +8,7 @@
 |---|---|
 | 套件名稱 | **Pulse.js** |
 | 程式語言 | **TypeScript**（Node.js） |
-| 執行環境 | Node.js **v22 以上**（本機實測 `node -v` = v26.10.0，見假設 1） |
+| 執行環境 | Node.js **v24 以上**（本機實測 `node -v` = v26.10.0，見假設 1） |
 | 介面 | Web 監控面板（SPA）＋ REST API ＋ 各端 POST 上報端點（header 帶 Auth 驗證碼） |
 | 安裝腳本 | `host-install.sh`（host 端＝面板，一鍵安裝＋自動啟動，支援 Ubuntu 與 macOS）、`install.sh`（Agent 端，一鍵安裝＋自動偵測系統，三平台） |
 | 邊緣驗證 | Cloudflare Zero Trust（Cloudflare Tunnel＋Access）；驗證於該層進行，App 端完全信任、不做比對（已裁示） |
@@ -46,7 +46,7 @@
 ### 硬性要求
 | 編號 | 要求 |
 |---|---|
-| R1 | 程式語言 TypeScript；執行環境 Node.js v22 以上；遠端倉庫 JS-PACKAGE/Pulse.js |
+| R1 | 程式語言 TypeScript；執行環境 Node.js v24 以上；遠端倉庫 JS-PACKAGE/Pulse.js |
 | R2 | 監控五指標：主記憶體、CPU 負載、GPU（多卡逐卡列舉，NVIDIA＋AMD＋Apple Silicon 全支援，已裁示）、主磁碟空間、網路上下行流量 |
 | R3 | 首頁只顯示異常中主機；詳情頁依主機系統＋自訂群組分組 |
 | R4 | Agent 以遠端 `install.sh` 安裝並自動偵測系統；支援 Linux 兩系（Debian/Ubuntu 系、RHEL 系）＋ macOS；Windows 第一版不做 |
@@ -100,7 +100,7 @@
 - **語言與建置**：全端 TypeScript；`tsc` 型別檢查；建置 `esbuild`（Agent 單檔打包，利於遠端分發）＋`vite`（面板）；測試 `vitest`。
 - **依賴策略**：最少相依——伺服器 `express`＋`better-sqlite3`；面板 `react`＋`vite`；Agent 盡量零第三方（系統指標以 Node 標準庫與子行程呼叫系統工具取得）。版本釘於 lockfile（見假設 7）。
 - **狀態儲存**：SQLite 單檔（WAL 模式）；路徑與參數在 `config.yaml`，程式不得寫死。
-- **部署形態**：host 端＝中央伺服器單機（Node 22+，Ubuntu 或 macOS），以 `host-install.sh` 一鍵安裝並自動啟動；對外以 Cloudflare Tunnel 暴露並由 Zero Trust Access 驗證；Agent 分佈各受監控主機（Linux 兩系＋macOS），以 `install.sh` 一鍵安裝。
+- **部署形態**：host 端＝中央伺服器單機（Node 24+，Ubuntu 或 macOS），以 `host-install.sh` 一鍵安裝並自動啟動；對外以 Cloudflare Tunnel 暴露並由 Zero Trust Access 驗證；Agent 分佈各受監控主機（Linux 兩系＋macOS），以 `install.sh` 一鍵安裝。
 
 ---
 
@@ -190,7 +190,7 @@ Threshold { metric, warn, crit }        # 對應 config.yaml
 
 | 檔案 | 內容要求 |
 |---|---|
-| `README.md` | **用途**：是什麼、系統圖、需求（Node 22+、cloudflared 自備並列前置安裝與設定步驟、Cloudflare Zero Trust）、host 端與 Agent 端安裝啟動（含 `host-install.sh`／`install.sh` 一鍵指令與結尾參數說明）、協定摘要、`config.yaml` 說明、測試指令、授權宣告（Apache 2.0＋第三方聲明） |
+| `README.md` | **用途**：是什麼、系統圖、需求（Node 24+、cloudflared 自備並列前置安裝與設定步驟、Cloudflare Zero Trust）、host 端與 Agent 端安裝啟動（含 `host-install.sh`／`install.sh` 一鍵指令與結尾參數說明）、協定摘要、`config.yaml` 說明、測試指令、授權宣告（Apache 2.0＋第三方聲明） |
 | `AGENTS.md` | **撰寫方式**：TypeScript 規範、建置測試指令、結構對應、**安全性章節＝六節全部規則逐條編號**、外部工具一律經 adapter＋Mock |
 | `CLAUDE.md` | 僅**引用 `AGENTS.md`**（一行指向＋摘要），不重複內容避免雙真值來源 |
 | `PLAN.md` | **本企劃書全文匯入之定案稿**（更新時同步） |
@@ -201,7 +201,7 @@ Threshold { metric, warn, crit }        # 對應 config.yaml
 
 - **前置檔案**：`LICENSE`（Apache 2.0）**已在 main**（Gate 0 部分達成，2026-10-16 經 GitHub API＋raw 驗證）；`host-install.sh`（host 端）與 `install.sh`（Agent 端）尚未上傳（raw 404）→ 列 Phase 0。
 - **面板安裝（host 端）**：`host-install.sh` 自 raw 取用；支援 Ubuntu 與 macOS——偵測平台後註冊 systemd／launchd 並開機自啟，其他系統明確提示後中止；只裝面板，cloudflared（Cloudflare Tunnel）由使用者自備安裝與設定（已裁示）；重跑即更新。
-- **服務部署**：中央伺服器單機（Node 22+）；對外以 Cloudflare Tunnel 暴露並由 Zero Trust Access 驗證（已裁示，cloudflared 為前置自備項目）；`config.yaml` 隨 repo 提供範本。
+- **服務部署**：中央伺服器單機（Node 24+）；對外以 Cloudflare Tunnel 暴露並由 Zero Trust Access 驗證（已裁示，cloudflared 為前置自備項目）；`config.yaml` 隨 repo 提供範本。
 - **Agent 分發**：`install.sh` 自 raw 取用；腳本依平台分支安裝（systemd／launchd），並註冊服務開機自啟。
 
 ---
@@ -248,7 +248,7 @@ Express REST API、資料模型建表、register／report、異常判定與離�
 
 ## 十一、已知假設與未定項
 
-1. **Node 版本**：鎖定 v22 以上；本機實測 `node -v` = v26.10.0（2026-10-16）。
+1. **Node 版本**：鎖定 v24 以上；本機實測 `node -v` = v26.10.0（2026-10-16）。
 2. **「Linux 兩個版本」已裁示定案（2026-10-16）**：兩大套件管理體系——Debian/Ubuntu 系（apt）與 RHEL 系（rpm／yum／dnf）；`install.sh`（Agent 端）依此分支，Gate 2 於兩系各實測一台；`host-install.sh`（host 端）支援 Ubuntu 與 macOS（見假設 10）。已落實至 R4、基本資料、三節、Gate 2。
 3. **GPU 採集已裁示定案（2026-10-16）**：NVIDIA＋AMD＋Apple Silicon 全支援、多卡逐卡列舉；Apple Silicon 需 root 權限取指標（成本已接受）——Agent 服務於 macOS 以 root 執行或授權專屬指令；缺權限／缺工具時該欄位標 N/A 並記 warning，不虛構數值。
 4. **指標數值來源**：Linux 讀 `/proc`、macOS 子行程系統工具；`nvidia-smi` 輸出格式隨驅動版本可能變動，解析器寬容處理（見九節）。

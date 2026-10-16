@@ -10,7 +10,7 @@
     "url": "https://github.com/JS-PACKAGE/Pulse.js.git"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "build": "npm run build:server && npm run build:agent && npm run build:web",

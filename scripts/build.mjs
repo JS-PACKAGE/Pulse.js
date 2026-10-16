@@ -6,7 +6,7 @@ const { version } = JSON.parse(readFileSync(new URL('../package.json', import.me
 const common = {
   bundle: true,
   platform: 'node',
-  target: 'node22',
+  target: 'node24',
   format: 'esm',
   sourcemap: false,
   logLevel: 'info',
