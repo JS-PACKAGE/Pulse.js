@@ -61,7 +61,7 @@ case "$(uname -m)" in
   aarch64|arm64) arch=arm64 ;;
   *) die '不支援的 CPU 架構；僅支援 x64 / arm64' ;;
 esac
-log "平台：$family；架構：$arch"
+log "平台：${family}；架構：${arch}"
 gpu_detected=0
 if command -v nvidia-smi >/dev/null 2>&1; then
   gpu_detected=1
@@ -120,7 +120,7 @@ ensure_node() {
     node_bin=$("$candidate" -p 'process.execPath')
     # nvm-style installs under home directories are invisible to the service (ProtectHome / other user).
     case $node_bin in
-      /home/*|/root/*|/Users/*) log "略過家目錄中的 Node.js（$node_bin），改用私有版本" ;;
+      /home/*|/root/*|/Users/*) log "略過家目錄中的 Node.js（${node_bin}），改用私有版本" ;;
       *) return ;;
     esac
   fi
@@ -252,7 +252,7 @@ UNIT
   systemctl is-active --quiet pulse-agent || die 'Agent 服務未啟動；請查看 journalctl -u pulse-agent'
   systemctl is-enabled --quiet pulse-agent || die 'pulse-agent.service 未設定開機自動啟動（systemctl is-enabled pulse-agent）'
   log '安裝完成，已設定開機自動啟動（systemd pulse-agent.service，enabled）。'
-  log "程式：/opt/pulse-agent/pulse-agent.mjs　Node.js：$node_bin　設定：/etc/pulse-agent/agent.json"
+  log "程式：/opt/pulse-agent/pulse-agent.mjs　Node.js：${node_bin}　設定：/etc/pulse-agent/agent.json"
   log '查看日誌：journalctl -u pulse-agent -f'
 else
   chown root:wheel /etc/pulse-agent/agent.json
@@ -281,6 +281,6 @@ fs.writeFileSync("/Library/LaunchDaemons/js-package.pulse-agent.plist", `<?xml v
   launchctl bootstrap system /Library/LaunchDaemons/js-package.pulse-agent.plist
   launchctl print system/js-package.pulse-agent >/dev/null || die 'launchd Agent 服務未載入'
   log '安裝完成，已設定開機自動啟動（LaunchDaemon js-package.pulse-agent，RunAtLoad）。'
-  log "程式：/opt/pulse-agent/pulse-agent.mjs　Node.js：$node_bin　設定：/etc/pulse-agent/agent.json"
+  log "程式：/opt/pulse-agent/pulse-agent.mjs　Node.js：${node_bin}　設定：/etc/pulse-agent/agent.json"
   log '查看日誌：tail -f /var/log/pulse-agent.log'
 fi

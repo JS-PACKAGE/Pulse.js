@@ -85,7 +85,7 @@ ensure_node() {
     node_bin=$("$candidate" -p 'process.execPath')
     # nvm-style installs under home directories are invisible to the service (ProtectHome / other user).
     case $node_bin in
-      /home/*|/root/*) log "略過家目錄中的 Node.js（$node_bin），改用私有版本" ;;
+      /home/*|/root/*) log "略過家目錄中的 Node.js（${node_bin}），改用私有版本" ;;
       *) return ;;
     esac
   fi
@@ -222,11 +222,11 @@ systemctl is-enabled --quiet pulse || die 'pulse.service 未設定開機自動�
 deployment_pending=0
 if ((had_previous)); then rm -rf -- /opt/pulse/app.prev; fi
 log '面板安裝完成，已設定開機自動啟動（systemd pulse.service，enabled）。'
-log "程式：/opt/pulse/app　Node.js：$node_bin　設定：/etc/pulse/config.yaml　資料：/var/lib/pulse"
+log "程式：/opt/pulse/app　Node.js：${node_bin}　設定：/etc/pulse/config.yaml　資料：/var/lib/pulse"
 log '查看日誌：journalctl -u pulse -f'
 log '=== Cloudflare Tunnel + Access ==='
 if ! command -v cloudflared >/dev/null 2>&1; then
   log '警告：未安裝 cloudflared。面板預設只綁 loopback；請自行安裝並設定 Cloudflare Tunnel + Access，見 README（本腳本不代裝）。'
 else
-  log "請確認 tunnel ingress 指向 http://127.0.0.1:$port，並以 Cloudflare Access 保護。"
+  log "請確認 tunnel ingress 指向 http://127.0.0.1:${port}，並以 Cloudflare Access 保護。"
 fi
