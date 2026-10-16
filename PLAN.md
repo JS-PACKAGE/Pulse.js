@@ -10,14 +10,14 @@
 | 程式語言 | **TypeScript**（Node.js） |
 | 執行環境 | Node.js **v22 以上**（本機實測 `node -v` = v26.10.0，見假設 1） |
 | 介面 | Web 監控面板（SPA）＋ REST API ＋ 各端 POST 上報端點（header 帶 Auth 驗證碼） |
-| 安裝腳本 | `host-install.sh`（host 端＝面板，一鍵安裝＋自動啟動，預設僅 Ubuntu）、`install.sh`（Agent 端，一鍵安裝＋自動偵測系統，三平台） |
+| 安裝腳本 | `host-install.sh`（host 端＝面板，一鍵安裝＋自動啟動，支援 Ubuntu 與 macOS）、`install.sh`（Agent 端，一鍵安裝＋自動偵測系統，三平台） |
 | 邊緣驗證 | Cloudflare Zero Trust（Cloudflare Tunnel＋Access）；驗證於該層進行，App 端完全信任、不做比對（已裁示） |
 | 核心依賴 | `express` 5.3.0（MIT）、`better-sqlite3` 13.0.3（MIT）、`react` 19.3.1（MIT）、`vite` 8.3.4（MIT）、`vitest` 5.0.5（MIT）、`esbuild` 0.28.2（MIT）（npm 查證 2026-10-16） |
 | 遠端倉庫 | https://github.com/JS-PACKAGE/Pulse.js（main） |
 | 介紹網址 | 未另設（以倉庫頁為準） |
 | 授權 | Apache License 2.0（`LICENSE` **已在 main**，2026-10-16 經 GitHub API 檔案清單＋raw 取檔驗證為標準全文） |
 | 前置檔案 | `host-install.sh` 與 `install.sh` 尚未在 main（raw 查證 404，2026-10-16）→ 列 Phase 0（見 Gate 0） |
-| 目標平台 | 受監控端（Agent）：Linux 兩系（Debian/Ubuntu 系、RHEL 系）＋ macOS；host 端（面板）：預設僅 Ubuntu；Windows 第一版不做（已裁示，見假設 2） |
+| 目標平台 | 受監控端（Agent）：Linux 兩系（Debian/Ubuntu 系、RHEL 系）＋ macOS；host 端（面板）：Ubuntu 與 macOS；Windows 第一版不做（已裁示，見假設 2） |
 | i18n 語系 | 繁體中文（zh-TW）／English（en）／日本語（ja）（已裁示） |
 | 佈景主題 | 暗色／亮色雙主題（已裁示） |
 
@@ -56,7 +56,7 @@
 | R8 | 安全性硬規則見六節，須完整寫入 `AGENTS.md` |
 | R9 | 實作順序：先必要文件與契約 Mock（Gate 0）→ 再寫程式 |
 | R10 | 授權 Apache License 2.0；README 附第三方授權聲明 |
-| R11 | 面板（host 端）以遠端 `host-install.sh` 一鍵安裝並自動啟動（systemd／launchd 開機自啟）；預設僅支援 Ubuntu，非 Ubuntu 明確提示後中止；只裝面板——cloudflared 由使用者自備、腳本不代裝 |
+| R11 | 面板（host 端）以遠端 `host-install.sh` 一鍵安裝並自動啟動（systemd／launchd 開機自啟）；支援 Ubuntu 與 macOS，其他系統明確提示後中止；只裝面板——cloudflared 由使用者自備、腳本不代裝 |
 | R12 | 各端 POST 上報至 host 端一律以 `Authorization` header 攜帶 Auth 驗證碼；驗證由 Cloudflare Zero Trust 層進行，缺／錯一律該層即拒；App 端完全信任該層驗證結果、不做任何比對（已裁示） |
 | R13 | `install.sh` 結尾須取得 POST 目標主機名稱與 Auth 驗證碼（互動詢問或參數），寫入 Agent 設定、不入日誌；驗證碼為**單一碼全端共用**（已裁示），輪替＝改 Zero Trust 設定＋各端重跑 `install.sh` 更新 |
 
@@ -67,7 +67,7 @@
 | 面向 | 需求 |
 |---|---|
 | 安裝（Agent 端） | 遠端 `install.sh` 一鍵安裝；自動偵測平台（Linux-Deb／Linux-RPM／macOS）、架構、GPU 數、網路介面；以 systemd（Linux）／launchd（macOS）註冊為服務；結尾詢問 POST 目標主機名稱與 Auth 驗證碼後寫入 Agent 設定（R13） |
-| 安裝（host 端） | 遠端 `host-install.sh` 一鍵安裝面板並自動啟動；預設僅支援 Ubuntu（自動偵測 Ubuntu 版本），註冊 systemd 開機自啟；非 Ubuntu 明確提示後中止（已裁示）；只裝面板不代裝 cloudflared（由使用者自備，已裁示）；重跑即更新 |
+| 安裝（host 端） | 遠端 `host-install.sh` 一鍵安裝面板並自動啟動；支援 Ubuntu（註冊 systemd）與 macOS（註冊 launchd LaunchDaemon，系統帳號 `_pulse`），自動偵測平台與版本並開機自啟；其他系統明確提示後中止；只裝面板不代裝 cloudflared（由使用者自備，已裁示）；重跑即更新 |
 | Agent 回報 | 五指標週期上報（預設 30 秒）；上報 POST 一律以 `Authorization` header 帶 Auth 驗證碼；心跳逾時（預設 90 秒）判定離線＝異常 |
 | GPU | 多卡逐卡列舉（index、名稱、廠商、使用率、記憶體用量）；NVIDIA＋AMD＋Apple Silicon 全支援（已裁示）；缺驅動或無 GPU 型別標 N/A 不中斷 |
 | 異常判定 | 閾值（CPU、記憶體、磁碟、GPU、流量）＋離線判定；閾值在 `config.yaml` 可調 |
@@ -90,7 +90,7 @@
     ├─ collectors/ cpu、mem、disk、net                    ├─ SQLite（better-sqlite3，WAL）
     └─ gpu/ GPU adapter（nvidia-smi／mock）                └─ Web 面板（React + Vite）
   install.sh（Agent 端：一鍵安裝、自動偵測平台）                  ├─ 首頁：僅異常主機卡片
-  host-install.sh（host 端：一鍵安裝面板、自動啟動，預設僅 Ubuntu）        ├─ 詳情頁：系統分組＋自訂群組
+  host-install.sh（host 端：一鍵安裝面板、自動啟動，Ubuntu／macOS）     ├─ 詳情頁：系統分組＋自訂群組
                                                                 ├─ i18n：zh-TW／en／ja
                                                                 └─ 主題：暗色／亮色
 對外：Cloudflare Tunnel＋Access（Zero Trust）——驗證於該層進行，App 端僅辨識結果
@@ -100,7 +100,7 @@
 - **語言與建置**：全端 TypeScript；`tsc` 型別檢查；建置 `esbuild`（Agent 單檔打包，利於遠端分發）＋`vite`（面板）；測試 `vitest`。
 - **依賴策略**：最少相依——伺服器 `express`＋`better-sqlite3`；面板 `react`＋`vite`；Agent 盡量零第三方（系統指標以 Node 標準庫與子行程呼叫系統工具取得）。版本釘於 lockfile（見假設 7）。
 - **狀態儲存**：SQLite 單檔（WAL 模式）；路徑與參數在 `config.yaml`，程式不得寫死。
-- **部署形態**：host 端＝中央伺服器單機（Node 22+，預設僅 Ubuntu），以 `host-install.sh` 一鍵安裝並自動啟動；對外以 Cloudflare Tunnel 暴露並由 Zero Trust Access 驗證；Agent 分佈各受監控主機（Linux 兩系＋macOS），以 `install.sh` 一鍵安裝。
+- **部署形態**：host 端＝中央伺服器單機（Node 22+，Ubuntu 或 macOS），以 `host-install.sh` 一鍵安裝並自動啟動；對外以 Cloudflare Tunnel 暴露並由 Zero Trust Access 驗證；Agent 分佈各受監控主機（Linux 兩系＋macOS），以 `install.sh` 一鍵安裝。
 
 ---
 
@@ -143,7 +143,7 @@
 - **流程範例 1（安裝註冊）**：`curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh | bash` → 偵測 macOS → 裝 Agent＋launchd → 結尾輸入 POST 目標主機名稱＋Auth 驗證碼寫入設定 → `register` 成功 → 面板出現新主機（狀態 ok）。
 - **流程範例 2（異常判定）**：Agent `report` 磁碟使用率 92% → 超過閾值 → 狀態 alert → 該主機卡片出現在首頁。
 - **流程範例 3（分組檢視）**：詳情頁依系統分組顯示三組（Linux-Deb／Linux-RPM／macOS）；使用者建自訂群組「生產環境」指派兩台 → 該群組區塊同步顯示。
-- **流程範例 4（面板部署）**：`curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-install.sh | bash` → 偵測 Ubuntu → 裝面板＋註冊 systemd → 自動啟動 → 開啟面板首頁成功。
+- **流程範例 4（面板部署）**：`curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-install.sh | sudo bash` → 偵測 Ubuntu／macOS → 裝面板＋註冊 systemd／launchd → 自動啟動 → 開啟面板首頁成功。
 
 ---
 
@@ -200,7 +200,7 @@ Threshold { metric, warn, crit }        # 對應 config.yaml
 ## 八、倉庫與部署
 
 - **前置檔案**：`LICENSE`（Apache 2.0）**已在 main**（Gate 0 部分達成，2026-10-16 經 GitHub API＋raw 驗證）；`host-install.sh`（host 端）與 `install.sh`（Agent 端）尚未上傳（raw 404）→ 列 Phase 0。
-- **面板安裝（host 端）**：`host-install.sh` 自 raw 取用；預設僅支援 Ubuntu——偵測 Ubuntu 版本後註冊 systemd 並開機自啟，非 Ubuntu 明確提示後中止；只裝面板，cloudflared（Cloudflare Tunnel）由使用者自備安裝與設定（已裁示）；重跑即更新。
+- **面板安裝（host 端）**：`host-install.sh` 自 raw 取用；支援 Ubuntu 與 macOS——偵測平台後註冊 systemd／launchd 並開機自啟，其他系統明確提示後中止；只裝面板，cloudflared（Cloudflare Tunnel）由使用者自備安裝與設定（已裁示）；重跑即更新。
 - **服務部署**：中央伺服器單機（Node 22+）；對外以 Cloudflare Tunnel 暴露並由 Zero Trust Access 驗證（已裁示，cloudflared 為前置自備項目）；`config.yaml` 隨 repo 提供範本。
 - **Agent 分發**：`install.sh` 自 raw 取用；腳本依平台分支安裝（systemd／launchd），並註冊服務開機自啟。
 
@@ -249,7 +249,7 @@ Express REST API、資料模型建表、register／report、異常判定與離�
 ## 十一、已知假設與未定項
 
 1. **Node 版本**：鎖定 v22 以上；本機實測 `node -v` = v26.10.0（2026-10-16）。
-2. **「Linux 兩個版本」已裁示定案（2026-10-16）**：兩大套件管理體系——Debian/Ubuntu 系（apt）與 RHEL 系（rpm／yum／dnf）；`install.sh`（Agent 端）依此分支，Gate 2 於兩系各實測一台；`host-install.sh`（host 端）預設僅 Ubuntu（見假設 10）。已落實至 R4、基本資料、三節、Gate 2。
+2. **「Linux 兩個版本」已裁示定案（2026-10-16）**：兩大套件管理體系——Debian/Ubuntu 系（apt）與 RHEL 系（rpm／yum／dnf）；`install.sh`（Agent 端）依此分支，Gate 2 於兩系各實測一台；`host-install.sh`（host 端）支援 Ubuntu 與 macOS（見假設 10）。已落實至 R4、基本資料、三節、Gate 2。
 3. **GPU 採集已裁示定案（2026-10-16）**：NVIDIA＋AMD＋Apple Silicon 全支援、多卡逐卡列舉；Apple Silicon 需 root 權限取指標（成本已接受）——Agent 服務於 macOS 以 root 執行或授權專屬指令；缺權限／缺工具時該欄位標 N/A 並記 warning，不虛構數值。
 4. **指標數值來源**：Linux 讀 `/proc`、macOS 子行程系統工具；`nvidia-smi` 輸出格式隨驅動版本可能變動，解析器寬容處理（見九節）。
 5. **上報與保留數值**：週期 30 秒、離線判定 90 秒、樣本保留 30 天——`config.yaml` 可調（可調整）。

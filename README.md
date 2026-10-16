@@ -3,7 +3,7 @@
 多主機中央監控面板。各主機上的 **Agent** 週期回報五項指標（主記憶體、CPU 負載、GPU〔多卡、NVIDIA／AMD／Apple Silicon〕、主磁碟空間、網路上下行流量）到 **host 端**（Express＋SQLite），Web 面板首頁只列**異常中**的主機，詳情頁依主機系統與自訂群組分組檢視。Agent 另外每 6 小時檢查一次作業系統待安裝更新，面板首頁提醒有更新的主機（只提醒，不代裝）。對外由 **Cloudflare Zero Trust**（Tunnel＋Access）保護，驗證完全在該層進行。
 
 ```
-[受監控主機 Linux／macOS]                         [host 端（Ubuntu）]
+[受監控主機 Linux／macOS]                         [host 端（Ubuntu／macOS）]
   pulse-agent ──HTTPS POST + Authorization──▶ Cloudflare Access ─▶ cloudflared ─▶ 127.0.0.1:8080
     collectors（/proc、sysctl、netstat）                                            Express REST API + SSE
     GPU adapters（nvidia-smi、rocm-smi、ioreg）                                     SQLite（WAL）
@@ -17,7 +17,7 @@
 | 項目 | 說明 |
 |---|---|
 | Node.js | v22 以上（安裝腳本在缺少時會下載官方 Node 22 並以 SHA-256 校驗，裝在私有目錄） |
-| host 端 | Ubuntu（`host-install.sh` 只支援 Ubuntu）、systemd |
+| host 端 | Ubuntu（systemd）或 macOS（launchd）；x64／arm64 |
 | Agent 端 | Debian/Ubuntu 系、RHEL 系（Rocky／Alma／CentOS／Fedora／Amazon Linux）、macOS；x64／arm64 |
 | cloudflared | **自備**，`host-install.sh` 不代裝 |
 | Cloudflare Zero Trust | 一個 Access application 保護面板網域 |
@@ -43,11 +43,12 @@ App 只綁 `127.0.0.1`，不讀取、不比對 `Authorization`；繞過 Tunnel �
 curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-install.sh | sudo bash
 ```
 
-- 偵測 Ubuntu 版本（非 Ubuntu 會明確提示並中止）→ 安裝 `curl ca-certificates tar xz-utils` → 確保 Node 22+（需要時裝私有版本到 `/opt/pulse/node`）→ 下載原始碼建置 → 部署到 `/opt/pulse/app` → 註冊並啟動 systemd `pulse.service`（enabled，開機自動啟動）→ 健康檢查 `GET /api/health` → 驗證開機自啟並列出安裝位置。
+- 偵測平台（Ubuntu 或 macOS，其他系統會明確提示並中止）→ 補齊前置工具（Ubuntu：`apt-get install curl ca-certificates tar xz-utils`；macOS：使用內建工具）→ 確保 Node 22+（需要時裝私有版本到 `/opt/pulse/node`，SHA-256 校驗）→ 下載原始碼建置 → 部署到 `/opt/pulse/app` → 註冊並啟動服務 → 健康檢查 `GET /api/health` → 驗證開機自啟並列出安裝位置。
+  - Ubuntu：systemd `pulse.service`（enabled），以系統使用者 `pulse` 執行；日誌 `journalctl -u pulse -f`
+  - macOS：launchd `/Library/LaunchDaemons/js-package.pulse.plist`（RunAtLoad＋KeepAlive，安裝時解除先前的 `launchctl disable`），以隱藏系統帳號 `_pulse` 執行（不存在時以 `dscl` 建立，ID 取 300–499 未使用者）；日誌 `tail -f /var/log/pulse.log`
 - 設定檔 `/etc/pulse/config.yaml`（首次安裝由範本複製，資料庫改到 `/var/lib/pulse/pulse.db`；之後重跑**不覆寫**）。
 - 重跑即更新；建置或健康檢查失敗會回滾到舊版。
 - 參數：`--ref <git ref>`（`PULSE_REF`，預設 `main`）、`--repo <owner/name>`（`PULSE_REPO`）。用 `sudo bash -s -- --ref v0.1.0` 傳入。
-- 日誌：`journalctl -u pulse -f`。
 
 手動安裝（無法用腳本時）：
 

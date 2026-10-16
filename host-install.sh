@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'HELP'
-[pulse] Pulse.js 面板安裝／升級（僅支援 Ubuntu，需 root 與 systemd）
+[pulse] Pulse.js 面板安裝／升級（支援 Ubuntu〔systemd〕與 macOS〔launchd〕，需 root）
 用法：bash host-install.sh [--ref <git ref>] [--repo <owner/name>]
       curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-install.sh | sudo bash -s -- [參數]
 環境變數：PULSE_REF（預設 main）、PULSE_REPO（預設 JS-PACKAGE/Pulse.js）。
@@ -23,17 +23,38 @@ while (($#)); do
     *) die '未知參數；請使用 --help' ;;
   esac
 done
-[[ $(uname -s) == Linux && -r /etc/os-release ]] || die '面板安裝僅支援 Ubuntu'
-. /etc/os-release
-[[ ${ID:-} == ubuntu ]] || die '面板安裝僅支援 Ubuntu'
-log "偵測到 Ubuntu ${VERSION_ID:-未知版本}"
+case "$(uname -s)" in
+  Darwin)
+    family=macos; node_os=darwin; node_ext=tar.gz; svc_user=_pulse
+    log "偵測到 macOS $(sw_vers -productVersion 2>/dev/null || printf '未知版本')"
+    ;;
+  Linux)
+    [[ -r /etc/os-release ]] || die '面板安裝僅支援 Ubuntu 與 macOS'
+    . /etc/os-release
+    [[ ${ID:-} == ubuntu ]] || die '面板安裝僅支援 Ubuntu 與 macOS'
+    family=ubuntu; node_os=linux; node_ext=tar.xz; svc_user=pulse
+    log "偵測到 Ubuntu ${VERSION_ID:-未知版本}"
+    ;;
+  *) die '面板安裝僅支援 Ubuntu 與 macOS' ;;
+esac
 if ((EUID != 0)); then
   if command -v sudo >/dev/null 2>&1; then
     die '需要 root。請使用 curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-install.sh | sudo bash'
   fi
   die '需要 root，請以 root 執行（系統未提供 sudo）'
 fi
-command -v systemctl >/dev/null 2>&1 || die '面板安裝需要 systemd'
+if [[ $family == ubuntu ]]; then command -v systemctl >/dev/null 2>&1 || die '面板安裝需要 systemd'; fi
+launchd_label=js-package.pulse
+launchd_plist=/Library/LaunchDaemons/$launchd_label.plist
+service_restart() {
+  if [[ $family == macos ]]; then launchctl kickstart -k "system/$launchd_label"; else systemctl restart pulse; fi
+}
+service_stop() {
+  if [[ $family == macos ]]; then launchctl bootout "system/$launchd_label"; else systemctl stop pulse; fi
+}
+service_logs() {
+  if [[ $family == macos ]]; then tail -n 50 /var/log/pulse.log; else journalctl -u pulse -n 50 --no-pager; fi
+}
 [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die '--repo 必須是 owner/name'
 [[ -n $ref && $ref != *$'\n'* && $ref != *$'\r'* ]] || die '--ref 無效'
 case "$(uname -m)" in
@@ -58,12 +79,12 @@ cleanup() {
     fi
     if ((had_previous)); then
       if mv /opt/pulse/app.prev /opt/pulse/app; then
-        systemctl restart pulse >/dev/null 2>&1 || true
+        service_restart >/dev/null 2>&1 || true
       else
         printf '[pulse] 錯誤：自動回滾失敗；舊版仍保留於 /opt/pulse/app.prev\n' >&2
       fi
     else
-      systemctl stop pulse >/dev/null 2>&1 || true
+      service_stop >/dev/null 2>&1 || true
     fi
   fi
   rm -rf -- "$work"
@@ -74,9 +95,13 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 log '=== 安裝前置工具 ==='
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y curl ca-certificates tar xz-utils
+if [[ $family == macos ]]; then
+  for tool in curl tar shasum; do command -v "$tool" >/dev/null 2>&1 || die "缺少 macOS 系統工具 ${tool}"; done
+else
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y curl ca-certificates tar xz-utils
+fi
 node_ok() { [[ -x $1 ]] && "$1" -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' >/dev/null 2>&1; }
 ensure_node() {
   local candidate filename='' checksum='' sum file extra actual
@@ -85,7 +110,7 @@ ensure_node() {
     node_bin=$("$candidate" -p 'process.execPath')
     # nvm-style installs under home directories are invisible to the service (ProtectHome / other user).
     case $node_bin in
-      /home/*|/root/*) log "略過家目錄中的 Node.js（${node_bin}），改用私有版本" ;;
+      /home/*|/root/*|/Users/*) log "略過家目錄中的 Node.js（${node_bin}），改用私有版本" ;;
       *) return ;;
     esac
   fi
@@ -93,13 +118,13 @@ ensure_node() {
   log '下載並校驗官方 Node.js 22'
   curl -fsSL --proto '=https' https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o "$work/SHASUMS256.txt"
   while read -r sum file extra; do
-    if [[ $file == node-v22.*-linux-"$arch".tar.xz && $sum =~ ^[[:xdigit:]]{64}$ && -z ${extra:-} ]]; then
+    if [[ $file == node-v22.*-"$node_os"-"$arch"."$node_ext" && $sum =~ ^[[:xdigit:]]{64}$ && -z ${extra:-} ]]; then
       filename=$file; checksum=$sum; break
     fi
   done <"$work/SHASUMS256.txt"
   [[ -n $filename && $filename != */* ]] || die '官方清單中沒有相容的 Node.js 套件'
   curl -fsSL --proto '=https' "https://nodejs.org/dist/latest-v22.x/$filename" -o "$work/node-archive"
-  actual=$(sha256sum "$work/node-archive")
+  if [[ $family == macos ]]; then actual=$(shasum -a 256 "$work/node-archive"); else actual=$(sha256sum "$work/node-archive"); fi
   [[ ${actual%% *} == "$checksum" ]] || die 'Node.js SHA256 校驗失敗，已中止'
   mkdir -p /opt/pulse/node
   chmod 755 /opt/pulse/node
@@ -130,10 +155,42 @@ tar -xzf "$work/source.tar.gz" -C "$work/staging" --strip-components=1 --no-same
 )
 [[ -f $work/staging/dist/server/main.mjs && -f $work/staging/config.yaml ]] || die '建置輸出或設定範本缺失'
 chmod 755 "$work/staging"
-getent group pulse >/dev/null 2>&1 || groupadd --system pulse
-if ! id -u pulse >/dev/null 2>&1; then useradd --system --gid pulse --no-create-home --shell /usr/sbin/nologin pulse; fi
-install -d -o pulse -g pulse -m 750 /var/lib/pulse
-install -d -o root -g pulse -m 750 /etc/pulse
+if [[ $family == macos ]]; then
+  # macOS 系統帳號慣例：底線開頭、隱藏、不可登入，ID 取 300–499 間未使用者。
+  macos_free_id() {
+    local used id
+    used=$({ dscl . -list /Users UniqueID; dscl . -list /Groups PrimaryGroupID; } | awk '{ print $2 }')
+    for ((id = 300; id < 500; id++)); do
+      if ! grep -qx "$id" <<<"$used"; then printf '%s\n' "$id"; return 0; fi
+    done
+    return 1
+  }
+  if ! dscl . -read /Groups/_pulse >/dev/null 2>&1; then
+    gid=$(macos_free_id) || die '找不到可用的系統群組 ID（300–499）'
+    dscl . -create /Groups/_pulse
+    dscl . -create /Groups/_pulse PrimaryGroupID "$gid"
+    dscl . -create /Groups/_pulse RealName 'Pulse.js'
+    dscl . -create /Groups/_pulse Password '*'
+  fi
+  gid=$(dscl . -read /Groups/_pulse PrimaryGroupID | awk '{ print $2 }')
+  if ! dscl . -read /Users/_pulse >/dev/null 2>&1; then
+    uid=$(macos_free_id) || die '找不到可用的系統使用者 ID（300–499）'
+    dscl . -create /Users/_pulse
+    dscl . -create /Users/_pulse UniqueID "$uid"
+    dscl . -create /Users/_pulse PrimaryGroupID "$gid"
+    dscl . -create /Users/_pulse UserShell /usr/bin/false
+    dscl . -create /Users/_pulse NFSHomeDirectory /var/empty
+    dscl . -create /Users/_pulse RealName 'Pulse.js'
+    dscl . -create /Users/_pulse Password '*'
+    dscl . -create /Users/_pulse IsHidden 1
+  fi
+  id -u _pulse >/dev/null 2>&1 || die '建立系統使用者 _pulse 失敗'
+else
+  getent group pulse >/dev/null 2>&1 || groupadd --system pulse
+  if ! id -u pulse >/dev/null 2>&1; then useradd --system --gid pulse --no-create-home --shell /usr/sbin/nologin pulse; fi
+fi
+install -d -o "$svc_user" -g "$svc_user" -m 750 /var/lib/pulse
+install -d -o root -g "$svc_user" -m 750 /etc/pulse
 [[ ! -e /opt/pulse/app.prev && ! -L /opt/pulse/app.prev ]] || die '/opt/pulse/app.prev 已存在；請先檢查先前部署備份，避免覆蓋'
 if [[ -e /opt/pulse/app || -L /opt/pulse/app ]]; then
   mv /opt/pulse/app /opt/pulse/app.prev
@@ -146,12 +203,42 @@ log '=== 設定與背景服務 ==='
 if [[ -e /etc/pulse/config.yaml ]]; then
   log '保留既有 /etc/pulse/config.yaml（不覆寫）'
 else
-  cp /opt/pulse/app/config.yaml "$work/config.yaml"
-  sed -i 's|^  path: ./data/pulse\.db$|  path: /var/lib/pulse/pulse.db|' "$work/config.yaml"
+  sed 's|^  path: ./data/pulse\.db$|  path: /var/lib/pulse/pulse.db|' /opt/pulse/app/config.yaml >"$work/config.yaml"
   grep -qx '  path: /var/lib/pulse/pulse.db' "$work/config.yaml" || die '無法修改範本 database.path；請檢查設定格式'
-  install -o root -g pulse -m 640 "$work/config.yaml" /etc/pulse/config.yaml
+  install -o root -g "$svc_user" -m 640 "$work/config.yaml" /etc/pulse/config.yaml
 fi
-cat >/etc/systemd/system/pulse.service <<UNIT
+if [[ $family == macos ]]; then
+  # launchd 以服務帳號開啟 StandardOutPath，先建立並交給 _pulse。
+  touch /var/log/pulse.log
+  chown _pulse:_pulse /var/log/pulse.log
+  chmod 640 /var/log/pulse.log
+  export PULSE_INSTALL_NODE=$node_bin PULSE_INSTALL_PLIST=$launchd_plist PULSE_INSTALL_LABEL=$launchd_label
+  "$node_bin" -e '
+const fs = require("node:fs");
+const escape = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+fs.writeFileSync(process.env.PULSE_INSTALL_PLIST, `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>${process.env.PULSE_INSTALL_LABEL}</string>
+<key>ProgramArguments</key><array><string>${escape(process.env.PULSE_INSTALL_NODE)}</string><string>/opt/pulse/app/dist/server/main.mjs</string><string>--config</string><string>/etc/pulse/config.yaml</string></array>
+<key>WorkingDirectory</key><string>/opt/pulse/app</string>
+<key>EnvironmentVariables</key><dict><key>NODE_ENV</key><string>production</string></dict>
+<key>UserName</key><string>_pulse</string>
+<key>GroupName</key><string>_pulse</string>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
+<key>StandardOutPath</key><string>/var/log/pulse.log</string>
+<key>StandardErrorPath</key><string>/var/log/pulse.log</string>
+</dict></plist>\n`);
+'
+  unset PULSE_INSTALL_NODE PULSE_INSTALL_PLIST PULSE_INSTALL_LABEL
+  chown root:wheel "$launchd_plist"
+  chmod 644 "$launchd_plist"
+  launchctl bootout "system/$launchd_label" >/dev/null 2>&1 || true
+  # 曾被 `launchctl disable` 的服務無法 bootstrap，也不會開機啟動；先解除停用。
+  launchctl enable "system/$launchd_label"
+  launchctl bootstrap system "$launchd_plist"
+else
+  cat >/etc/systemd/system/pulse.service <<UNIT
 [Unit]
 Description=Pulse.js monitoring dashboard
 After=network-online.target
@@ -174,10 +261,11 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 UNIT
-chmod 644 /etc/systemd/system/pulse.service
-systemctl daemon-reload
-systemctl enable pulse
-systemctl restart pulse
+  chmod 644 /etc/systemd/system/pulse.service
+  systemctl daemon-reload
+  systemctl enable pulse
+  systemctl restart pulse
+fi
 
 log '=== 等待健康檢查（最多 30 秒） ==='
 if ! "$node_bin" --input-type=module >"$work/health-target" <<'NODE'
@@ -196,7 +284,7 @@ try {
 }
 NODE
 then
-  journalctl -u pulse -n 50 --no-pager >&2 || true
+  service_logs >&2 || true
   exit 1
 fi
 {
@@ -216,16 +304,27 @@ while ((SECONDS - start < 30)); do
   ((SECONDS - start >= 30)) || sleep 1
 done
 if ((!healthy)); then
-  printf '[pulse] 錯誤：健康檢查失敗。服務日誌如下（journalctl -u pulse -n 50 --no-pager）：\n' >&2
-  journalctl -u pulse -n 50 --no-pager >&2 || true
+  printf '[pulse] 錯誤：健康檢查失敗。服務日誌最後 50 行：\n' >&2
+  service_logs >&2 || true
   exit 1
 fi
-systemctl is-enabled --quiet pulse || die 'pulse.service 未設定開機自動啟動（systemctl is-enabled pulse）'
+if [[ $family == macos ]]; then
+  launchctl print "system/$launchd_label" >/dev/null || die "launchd 服務 ${launchd_label} 未載入"
+  if launchctl print-disabled system | grep -Eq "\"$launchd_label\" => (true|disabled)"; then
+    die "launchd 服務 ${launchd_label} 被停用，不會開機自動啟動"
+  fi
+else
+  systemctl is-enabled --quiet pulse || die 'pulse.service 未設定開機自動啟動（systemctl is-enabled pulse）'
+fi
 deployment_pending=0
 if ((had_previous)); then rm -rf -- /opt/pulse/app.prev; fi
-log '面板安裝完成，已設定開機自動啟動（systemd pulse.service，enabled）。'
+if [[ $family == macos ]]; then
+  log "面板安裝完成，已設定開機自動啟動（LaunchDaemon ${launchd_label}，RunAtLoad，帳號 _pulse）。"
+else
+  log '面板安裝完成，已設定開機自動啟動（systemd pulse.service，enabled）。'
+fi
 log "程式：/opt/pulse/app　Node.js：${node_bin}　設定：/etc/pulse/config.yaml　資料：/var/lib/pulse"
-log '查看日誌：journalctl -u pulse -f'
+if [[ $family == macos ]]; then log '查看日誌：tail -f /var/log/pulse.log'; else log '查看日誌：journalctl -u pulse -f'; fi
 log '=== Cloudflare Tunnel + Access ==='
 if ! command -v cloudflared >/dev/null 2>&1; then
   log '警告：未安裝 cloudflared。面板預設只綁 loopback；請自行安裝並設定 Cloudflare Tunnel + Access，見 README（本腳本不代裝）。'
