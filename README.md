@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/host-insta
   - macOS：launchd `/Library/LaunchDaemons/js-package.pulse.plist`（RunAtLoad＋KeepAlive，安裝時解除先前的 `launchctl disable`），以隱藏系統帳號 `_pulse` 執行（不存在時以 `dscl` 建立，ID 取 300–499 未使用者）；日誌 `tail -f /var/log/pulse.log`
 - 設定檔 `/etc/pulse/config.yaml`（首次安裝由範本複製，資料庫改到 `/var/lib/pulse/pulse.db`；之後重跑**不覆寫**）。
 - 重跑即更新；建置或健康檢查失敗會回滾到舊版並重啟。macOS 會等舊的 launchd 服務完全卸載後才重新載入（回滾時亦同），避免 `Bootstrap failed: 5: Input/output error` 讓服務停在未載入狀態。
-- 參數：`--ref <git ref>`（`PULSE_REF`，預設 `main`）、`--repo <owner/name>`（`PULSE_REPO`）。用 `sudo bash -s -- --ref v0.1.0` 傳入。
+- 參數：`--ref <git ref>`（`PULSE_REF`，預設 `main`）、`--repo <owner/name>`（`PULSE_REPO`）。用 `sudo bash -s -- --ref v1.0.0` 傳入。
 
 手動安裝（無法用腳本時）：
 
