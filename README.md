@@ -78,7 +78,7 @@ curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh
 
 以 root 身分執行時也可改用環境變數 `PULSE_SERVER`、`PULSE_CLIENT_ID`、`PULSE_CLIENT_SECRET`。
 
-重跑 `install.sh` 即升級 Agent／輪替 Service Token（`diskPath`、`netInterface` 會保留）。
+重跑 `install.sh` 即自動更新 Agent：已安裝時沿用 `/etc/pulse-agent/agent.json` 的面板網址與 Service Token，不再詢問（無終端的 `curl … | sudo bash` 也可直接跑）；`diskPath`、`netInterface` 會保留。輪替 Service Token 或更換面板時，以參數或環境變數提供新值即可覆寫。新版服務啟動後須持續執行 5 秒才算成功，否則自動回滾到先前的 Agent、設定與服務定義並重啟舊版；macOS 會等舊的 launchd 服務完全卸載後才重新載入，避免 `Bootstrap failed: 5: Input/output error` 讓服務停在未載入狀態。
 
 `/etc/pulse-agent/agent.json`：
 

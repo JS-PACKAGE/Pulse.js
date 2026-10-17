@@ -7,7 +7,9 @@ usage() {
 [pulse] Pulse.js Agent 安裝／升級（需 root）
 用法：bash install.sh [--server <host或URL>] [--client-id <用戶端識別碼>] [--client-secret-file <path>]
       curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh | sudo bash -s -- [參數]
-環境變數：PULSE_SERVER、PULSE_CLIENT_ID、PULSE_CLIENT_SECRET。未提供時從 /dev/tty 詢問。
+環境變數：PULSE_SERVER、PULSE_CLIENT_ID、PULSE_CLIENT_SECRET。
+已安裝時沿用 /etc/pulse-agent/agent.json 自動更新（參數／環境變數優先）；仍缺的值從 /dev/tty 詢問。
+更新失敗時自動回滾到先前的 Agent、設定與服務定義。
 用戶端識別碼／服務金鑰＝Cloudflare Access Service Token 的 Client ID／Client Secret。
 服務金鑰僅支援環境變數、檔案或隱藏輸入；不接受 --client-secret。
 HELP
@@ -37,7 +39,25 @@ if ((EUID != 0)); then
 fi
 umask 077
 work=$(mktemp -d)
-trap 'rm -rf -- "$work"' EXIT
+# 升級時置 1：之後任何失敗（含中斷）都還原先前的 Agent、設定與服務定義並重啟舊版。
+rollback_pending=0
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if ((rollback_pending)); then
+    printf '[pulse] 錯誤：更新失敗，正在回滾到先前的 Agent\n' >&2
+    if restore_previous && service_reload >/dev/null 2>&1; then
+      printf '[pulse] 已恢復先前的 Agent 與設定\n' >&2
+    else
+      # 備份含服務金鑰，僅 root 可讀（umask 077）；保留供手動還原。
+      printf '[pulse] 錯誤：自動回滾失敗；先前的檔案備份保留在 %s\n' "$work/backup" >&2
+      exit "$status"
+    fi
+  fi
+  rm -rf -- "$work"
+  exit "$status"
+}
+trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -65,6 +85,77 @@ case "$(uname -m)" in
   *) die '不支援的 CPU 架構；僅支援 x64 / arm64' ;;
 esac
 log "平台：${family}；架構：${arch}"
+agent_bin=/opt/pulse-agent/pulse-agent.mjs
+agent_config=/etc/pulse-agent/agent.json
+launchd_label=js-package.pulse-agent
+if [[ $family == macos ]]; then
+  service_file=/Library/LaunchDaemons/$launchd_label.plist
+else
+  service_file=/etc/systemd/system/pulse-agent.service
+fi
+# 升級會改寫的檔案；備份檔名用索引對應。
+managed=("$agent_bin" "$agent_config" "$service_file")
+backup_previous() {
+  local i
+  mkdir "$work/backup"
+  for i in "${!managed[@]}"; do
+    if [[ -e ${managed[i]} ]]; then cp -p -- "${managed[i]}" "$work/backup/$i"; fi
+  done
+}
+restore_previous() {
+  local i failed=0
+  for i in "${!managed[@]}"; do
+    if [[ -e $work/backup/$i ]]; then
+      cp -p -- "$work/backup/$i" "${managed[i]}" || failed=1
+    else
+      rm -f -- "${managed[i]}" || failed=1
+    fi
+  done
+  return "$failed"
+}
+service_reload() {
+  local waited=0
+  if [[ $family == macos ]]; then
+    launchctl bootout "system/$launchd_label" >/dev/null 2>&1 || true
+    # bootout 是非同步的：舊行程（可能正等 softwareupdate 子行程）結束前 bootstrap 會失敗
+    # （Bootstrap failed: 5: Input/output error），留下未載入的服務。等 launchd 完全卸載再載入；
+    # launchd 預設 ExitTimeOut 20 秒後強制結束，故最多等 30 秒。
+    while launchctl print "system/$launchd_label" >/dev/null 2>&1; do
+      ((waited < 60)) || return 1
+      sleep 0.5
+      waited=$((waited + 1))
+    done
+    # 曾被 `launchctl disable` 的服務無法 bootstrap，也不會開機啟動；先解除停用。
+    launchctl enable "system/$launchd_label"
+    launchctl bootstrap system "$service_file"
+  else
+    systemctl daemon-reload
+    systemctl enable pulse-agent
+    systemctl restart pulse-agent
+  fi
+}
+service_pid() {
+  if [[ $family == macos ]]; then
+    launchctl print "system/$launchd_label" 2>/dev/null | awk '$1 == "pid" && $2 == "=" { print $3; exit }'
+  else
+    systemctl show -p MainPID --value pulse-agent
+  fi
+}
+# 啟動即失敗（設定錯誤、bundle 損毀）會在數秒內結束並被重啟；同一個 PID 撐過觀察期才算成功。
+verify_running() {
+  local pid='' tries=0
+  until [[ $pid =~ ^[1-9][0-9]*$ ]]; do
+    ((tries < 20)) || return 1
+    sleep 0.5
+    tries=$((tries + 1))
+    pid=$(service_pid || true)
+  done
+  sleep 5
+  [[ $(service_pid || true) == "$pid" ]]
+}
+service_logs() {
+  if [[ $family == macos ]]; then tail -n 30 /var/log/pulse-agent.log; else journalctl -u pulse-agent -n 30 --no-pager; fi
+}
 gpu_detected=0
 if command -v nvidia-smi >/dev/null 2>&1; then
   gpu_detected=1
@@ -156,6 +247,28 @@ if [[ -n $_secret_file ]]; then
   [[ -r $_secret_file ]] || die '無法讀取 --client-secret-file'
   client_secret=$(cat -- "$_secret_file")
 fi
+had_previous=0
+if [[ -e $agent_config ]]; then
+  # 已安裝：沿用 agent.json 的目標與 Service Token，重跑即自動更新、不再詢問；
+  # 參數或環境變數仍優先（輪替 Service Token、更換面板）。
+  [[ -e $agent_bin ]] && had_previous=1
+  if ! PULSE_INSTALL_CONFIG=$agent_config "$node_bin" -e '
+const fs = require("node:fs");
+try {
+  const config = JSON.parse(fs.readFileSync(process.env.PULSE_INSTALL_CONFIG, "utf8"));
+  if (typeof config !== "object" || config === null) throw Error();
+  const pick = key => typeof config[key] === "string" && !/[\x00-\x1f\x7f]/.test(config[key]) ? config[key] : "";
+  process.stdout.write(["serverUrl", "accessClientId", "accessClientSecret"].map(pick).join("\n") + "\n");
+} catch { process.exit(1); }
+' >"$work/previous"; then die "無法解析既有設定 ${agent_config}；請修正 JSON 或移除後重新安裝"; fi
+  { IFS= read -r previous_server; IFS= read -r previous_client_id; IFS= read -r previous_client_secret; } <"$work/previous"
+  rm -f -- "$work/previous"
+  [[ -n $server ]] || server=$previous_server
+  [[ -n $client_id ]] || client_id=$previous_client_id
+  [[ -n $client_secret ]] || client_secret=$previous_client_secret
+  unset previous_client_secret
+  log "偵測到既有安裝：沿用 ${agent_config} 的設定自動更新"
+fi
 if [[ -z $server || -z $client_id || -z $client_secret ]]; then
   if ! { exec 3<>/dev/tty; } 2>/dev/null; then
     die '沒有可用終端；請提供 --server、--client-id、--client-secret-file（或 PULSE_SERVER、PULSE_CLIENT_ID、PULSE_CLIENT_SECRET）'
@@ -193,6 +306,7 @@ try {
 } catch { process.exit(1); }
 '); then die '主機 URL 無效：僅允許 HTTPS，HTTP 僅限 loopback；不可包含帳密、query 或 fragment'; fi
 unset PULSE_INSTALL_SERVER
+log "上報目標：${server}"
 header=$(mktemp "$work/header.XXXXXX")
 chmod 600 "$header"
 printf 'CF-Access-Client-Id: %s\nCF-Access-Client-Secret: %s\n' "$client_id" "$client_secret" >"$header"
@@ -209,6 +323,7 @@ case $http_code in
 esac
 IFS= read -r first_line <"$work/pulse-agent.mjs" || true
 [[ $first_line == '#!/usr/bin/env node' ]] || die '下載內容不是 Pulse Agent；請確認目標是 Pulse 面板'
+"$node_bin" --check "$work/pulse-agent.mjs" 2>/dev/null || die '下載的 Agent 不完整或無法解析；未變更現有安裝'
 mkdir -p /opt/pulse-agent /etc/pulse-agent
 chmod 755 /opt/pulse-agent
 if [[ $family != macos ]]; then
@@ -223,6 +338,13 @@ if [[ $family != macos ]]; then
 else
   chown root:wheel /etc/pulse-agent
   chmod 700 /etc/pulse-agent
+fi
+if ((had_previous)); then
+  backup_previous
+  rollback_pending=1
+  completed='更新完成'
+else
+  completed='安裝完成'
 fi
 install -m 755 "$work/pulse-agent.mjs" /opt/pulse-agent/pulse-agent.mjs
 export PULSE_INSTALL_SERVER=$server PULSE_INSTALL_CLIENT_ID=$client_id PULSE_INSTALL_CLIENT_SECRET=$client_secret
@@ -267,12 +389,14 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
   chmod 644 /etc/systemd/system/pulse-agent.service
-  systemctl daemon-reload
-  systemctl enable pulse-agent
-  systemctl restart pulse-agent
-  systemctl is-active --quiet pulse-agent || die 'Agent 服務未啟動；請查看 journalctl -u pulse-agent'
+  service_reload
+  if ! verify_running; then
+    service_logs >&2 || true
+    die 'Agent 服務啟動後未能持續執行；以上為 journalctl -u pulse-agent 最後 30 行'
+  fi
   systemctl is-enabled --quiet pulse-agent || die 'pulse-agent.service 未設定開機自動啟動（systemctl is-enabled pulse-agent）'
-  log '安裝完成，已設定開機自動啟動（systemd pulse-agent.service，enabled）。'
+  rollback_pending=0
+  log "${completed}，已設定開機自動啟動（systemd pulse-agent.service，enabled）。"
   log "程式：/opt/pulse-agent/pulse-agent.mjs　Node.js：${node_bin}　設定：/etc/pulse-agent/agent.json"
   log '查看日誌：journalctl -u pulse-agent -f'
 else
@@ -296,12 +420,14 @@ fs.writeFileSync("/Library/LaunchDaemons/js-package.pulse-agent.plist", `<?xml v
   unset PULSE_INSTALL_NODE
   chown root:wheel /Library/LaunchDaemons/js-package.pulse-agent.plist
   chmod 644 /Library/LaunchDaemons/js-package.pulse-agent.plist
-  launchctl bootout system/js-package.pulse-agent >/dev/null 2>&1 || true
-  # 曾被 `launchctl disable` 的服務無法 bootstrap，也不會開機啟動；先解除停用。
-  launchctl enable system/js-package.pulse-agent
-  launchctl bootstrap system /Library/LaunchDaemons/js-package.pulse-agent.plist
-  launchctl print system/js-package.pulse-agent >/dev/null || die 'launchd Agent 服務未載入'
-  log '安裝完成，已設定開機自動啟動（LaunchDaemon js-package.pulse-agent，RunAtLoad）。'
+  service_reload || die 'launchd 無法重新載入 Agent 服務（舊服務 30 秒內未卸載或 bootstrap 失敗）'
+  launchctl print "system/$launchd_label" >/dev/null || die 'launchd Agent 服務未載入'
+  if ! verify_running; then
+    service_logs >&2 || true
+    die 'Agent 服務啟動後未能持續執行；以上為 /var/log/pulse-agent.log 最後 30 行'
+  fi
+  rollback_pending=0
+  log "${completed}，已設定開機自動啟動（LaunchDaemon js-package.pulse-agent，RunAtLoad）。"
   log "程式：/opt/pulse-agent/pulse-agent.mjs　Node.js：${node_bin}　設定：/etc/pulse-agent/agent.json"
   log '查看日誌：tail -f /var/log/pulse-agent.log'
 fi
