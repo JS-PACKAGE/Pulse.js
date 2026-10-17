@@ -177,6 +177,24 @@ h1::before {
 .section-heading h1 {
   text-transform: none;
 }
+/* Real hostname printed beside an alias. Its own colour, since h1 paints text via background-clip. */
+.hostname {
+  font-family: var(--font-hud);
+  font-size: 0.7em;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+}
+.alias-form {
+  flex: 1 1 18rem;
+  margin: 1.4rem 0;
+}
+.alias-form input {
+  flex: 1 1 12rem;
+  max-width: 28rem;
+}
 h2 {
   font-size: 1.2rem;
   margin: 1.6rem 0 1rem;

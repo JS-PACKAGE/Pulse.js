@@ -3,6 +3,7 @@ import type { Group, HostDetailResponse } from '../../src/shared/types.ts';
 import { api, errorKey, number, osNames, percent, rate } from './api';
 import { Chart } from './Chart';
 import { Gauge } from './Gauge';
+import { HostName } from './HostName';
 import { useI18n } from './i18n';
 import type { MessageKey } from './i18n';
 import { UpdatesSummary } from './Updates';
@@ -28,6 +29,7 @@ export function HostDetail({
   minutes,
   loading,
   setMinutes,
+  refresh,
 }: {
   data: HostDetailResponse;
   groups: Group[];
@@ -35,39 +37,97 @@ export function HostDetail({
   /** The charts still show the previous range while the selected one loads. */
   loading: boolean;
   setMinutes: (value: number) => void;
+  refresh: () => void;
 }) {
   const { t, lang } = useI18n();
   const { host, thresholds, series, gpuSeries, since, now } = data;
   const metrics = host.latest?.metrics;
   const date = (ts: number) => new Date(ts).toLocaleString(lang);
   const custom = groups.filter((group) => group.kind === 'custom' && host.customGroupIds.includes(group.id));
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<MessageKey | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<MessageKey | null>(null);
+  const [editingAlias, setEditingAlias] = useState(false);
+  const [alias, setAlias] = useState('');
   async function deleteHost() {
-    if (!window.confirm(t('deleteHostConfirm', { name: host.hostname }))) return;
-    setDeleting(true);
-    setDeleteError(null);
+    const name = host.alias === null ? host.hostname : `${host.alias} (${host.hostname})`;
+    if (!window.confirm(t('deleteHostConfirm', { name }))) return;
+    setBusy(true);
+    setActionError(null);
     try {
       await api<void>(`/api/hosts/${host.id}`, { method: 'DELETE' });
       window.location.hash = '#/hosts';
     } catch (failure) {
-      setDeleteError(errorKey(failure));
-      setDeleting(false);
+      setActionError(errorKey(failure));
+      setBusy(false);
+    }
+  }
+  async function saveAlias() {
+    setBusy(true);
+    setActionError(null);
+    try {
+      // An empty field removes the alias and the hostname is shown again.
+      await api<void>(`/api/hosts/${host.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ alias: alias.trim() || null }),
+      });
+      setEditingAlias(false);
+      refresh();
+    } catch (failure) {
+      setActionError(errorKey(failure));
+    } finally {
+      setBusy(false);
     }
   }
   return (
     <>
       <a href="#/hosts">← {t('back')}</a>
       <div className="section-heading">
-        <h1>{host.hostname}</h1>
+        {editingAlias ? (
+          <form
+            className="inline alias-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveAlias();
+            }}
+          >
+            <input
+              aria-label={t('alias')}
+              placeholder={t('aliasHint')}
+              maxLength={64}
+              value={alias}
+              onChange={(event) => setAlias(event.target.value)}
+              disabled={busy}
+              autoFocus
+            />
+            <button disabled={busy}>{t('save')}</button>
+            <button type="button" disabled={busy} onClick={() => setEditingAlias(false)}>
+              {t('cancel')}
+            </button>
+          </form>
+        ) : (
+          <h1>
+            <HostName host={host} />
+          </h1>
+        )}
         <div className="inline">
           <span className={`badge ${host.status}`}>{t(host.status)}</span>
-          <button className="danger" disabled={deleting} onClick={() => void deleteHost()}>
+          {!editingAlias && (
+            <button
+              disabled={busy}
+              onClick={() => {
+                setAlias(host.alias ?? '');
+                setEditingAlias(true);
+              }}
+            >
+              {t('setAlias')}
+            </button>
+          )}
+          <button className="danger" disabled={busy} onClick={() => void deleteHost()}>
             {t('deleteHost')}
           </button>
         </div>
       </div>
-      {deleteError && <p className="error">{t(deleteError)}</p>}
+      {actionError && <p className="error">{t(actionError)}</p>}
       <section className="panel">
         <dl className="facts">
           <div>

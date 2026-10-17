@@ -3,7 +3,7 @@ import { parseAgentConfig } from '../src/agent/config.ts';
 import { evaluateAlerts } from '../src/server/alerts.ts';
 import { ConfigError } from '../src/server/config.ts';
 import type { SystemMetrics } from '../src/shared/types.ts';
-import { normalizeGroupName, normalizeHostname, parseRegister, parseReport } from '../src/shared/validate.ts';
+import { normalizeDisplayName, normalizeHostname, parseRegister, parseReport } from '../src/shared/validate.ts';
 import { testConfig } from './helpers.ts';
 
 const metrics: SystemMetrics = {
@@ -75,10 +75,10 @@ describe('payload validation', () => {
     expect(with_('12').ok).toBe(false);
   });
 
-  it('group names are trimmed, 1–64 chars, no control characters', () => {
-    expect(normalizeGroupName('  生產環境 ')).toBe('生產環境');
-    expect(normalizeGroupName('a\nb')).toBeNull();
-    expect(normalizeGroupName('x'.repeat(65))).toBeNull();
+  it('display names (groups, host aliases) are trimmed, 1–64 chars, no control characters', () => {
+    expect(normalizeDisplayName('  生產環境 ')).toBe('生產環境');
+    expect(normalizeDisplayName('a\nb')).toBeNull();
+    expect(normalizeDisplayName('x'.repeat(65))).toBeNull();
   });
 });
 

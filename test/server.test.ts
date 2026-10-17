@@ -356,8 +356,43 @@ describe('custom groups', () => {
   });
 });
 
+describe('host aliases', () => {
+  it('sets, keeps across re-registration, sorts by and clears the alias', async () => {
+    const { json } = await boot();
+    const register = async (hostname: string) =>
+      (await json('/api/agent/register', { method: 'POST', body: JSON.stringify({ ...registration, hostname }) })).body
+        .hostId;
+    const a = await register('a-host');
+    const z = await register('z-host');
+    const patch = (id: number | string, body: unknown) =>
+      json(`/api/hosts/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+    const list = async () =>
+      ((await json('/api/hosts')).body as ListHostsResponse).hosts.map((h) => [h.id, h.alias]);
+
+    expect(await list()).toEqual([[a, null], [z, null]]);
+    expect((await patch(z, { alias: '  資料庫 主機 ' })).status).toBe(204);
+    expect((await patch(a, { alias: 'web' })).status).toBe(204);
+    // Ordered by alias when set ("web" < "資料庫 主機"), not by hostname.
+    expect(await list()).toEqual([[a, 'web'], [z, '資料庫 主機']]);
+    expect((await patch(z, { alias: 'Alpha' })).status).toBe(204);
+    expect(await list()).toEqual([[z, 'Alpha'], [a, 'web']]);
+
+    expect(await register('a-host')).toBe(a);
+    expect((await json(`/api/hosts/${a}?minutes=60`)).body.host).toMatchObject({ hostname: 'a-host', alias: 'web' });
+
+    for (const alias of ['', '   ', 'x'.repeat(65), 'a\nb', 42]) expect((await patch(a, { alias })).status).toBe(400);
+    expect((await patch(a, {})).status).toBe(400);
+    expect((await patch(9999, { alias: 'x' })).status).toBe(404);
+    expect((await patch('abc', { alias: 'x' })).status).toBe(400);
+    expect(await list()).toEqual([[z, 'Alpha'], [a, 'web']]);
+
+    expect((await patch(a, { alias: null })).status).toBe(204);
+    expect(await list()).toEqual([[a, null], [z, 'Alpha']]);
+  });
+});
+
 describe('host deletion', () => {
-  it('deletes a host with its samples, GPU rows, update check and group membership', () => {
+  it('deletes a host with its samples, GPU rows, update check, group membership and alias', () => {
     const db = openDatabase(':memory:', 1000);
     const events = new EventHub();
     const seen: PulseEvent[] = [];
@@ -368,6 +403,9 @@ describe('host deletion', () => {
     const other = monitor.register({ ...registration, hostname: 'web-02' }).hostId;
     const group = store.createGroup('Prod');
     store.addMember(group, hostId);
+    seen.length = 0;
+    expect(monitor.setAlias(hostId, 'Web')).toBe(true);
+    expect(seen).toEqual([{ type: 'host', hostId }]);
     const ts = Date.now();
     const gpus = MOCK_GPU_CASES.single.map((g) => ({ ...g }));
     monitor.report({ hostId, ts, metrics: healthy, gpus, updates: { checkedAt: ts, pending: 3, security: 1 } });
@@ -377,10 +415,13 @@ describe('host deletion', () => {
     expect(seen).toContainEqual({ type: 'hostDeleted', hostId });
     const count = (table: string) =>
       db.prepare(`SELECT COUNT(*) FROM ${table} WHERE host_id = ?`).pluck().get(hostId) as number;
-    expect(['metric_samples', 'gpu_samples', 'host_updates', 'host_group_members'].map(count)).toEqual([0, 0, 0, 0]);
+    expect(['metric_samples', 'gpu_samples', 'host_updates', 'host_group_members', 'host_aliases'].map(count)).toEqual([
+      0, 0, 0, 0, 0,
+    ]);
     expect(monitor.listHosts().hosts.map((h) => h.id)).toEqual([other]);
     expect(store.getGroup(group)?.hostIds).toEqual([]);
     expect(monitor.deleteHost(hostId)).toBe(false);
+    expect(monitor.setAlias(hostId, 'Web')).toBe(false);
     db.close();
   });
 

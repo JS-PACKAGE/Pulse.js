@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Group, HostSummary } from '../../src/shared/types.ts';
 import { api, errorKey, number, osNames, percent, rate } from './api';
+import { HostName } from './HostName';
 import { useI18n } from './i18n';
 import { UpdatesSummary } from './Updates';
 import type { MessageKey } from './i18n';
@@ -40,7 +41,9 @@ export function HostTable({
                   <span className={`badge ${host.status}`}>{t(host.status)}</span>
                 </td>
                 <td>
-                  <a href={`#/hosts/${host.id}`}>{host.hostname}</a>
+                  <a href={`#/hosts/${host.id}`}>
+                    <HostName host={host} />
+                  </a>
                 </td>
                 <td>{number(metrics?.cpuLoadPercent, '%')}</td>
                 <td>{number(percent(metrics?.memUsedMB, metrics?.memTotalMB), '%')}</td>
@@ -179,7 +182,7 @@ function GroupPanel({ group, hosts, refresh }: { group: Group; hosts: HostSummar
             <option value="">{t('selectHost')}</option>
             {available.map((host) => (
               <option key={host.id} value={host.id}>
-                {host.hostname}
+                {host.alias === null ? host.hostname : `${host.alias} (${host.hostname})`}
               </option>
             ))}
           </select>

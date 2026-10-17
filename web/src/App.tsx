@@ -4,6 +4,7 @@ import type { HostSummary } from '../../src/shared/types.ts';
 import { duration, number, osNames, rate } from './api';
 import { Groups } from './Groups';
 import { HostDetail } from './HostDetail';
+import { HostName } from './HostName';
 import { readPreference, savePreference, useI18n } from './i18n';
 import type { Language } from './i18n';
 import { UpdatesSummary } from './Updates';
@@ -45,7 +46,9 @@ function Overview({ hosts }: { hosts: HostSummary[] }) {
           {abnormal.map((host) => (
             <a className={`panel host-card ${host.status}`} href={`#/hosts/${host.id}`} key={host.id}>
               <div className="section-heading">
-                <h2>{host.hostname}</h2>
+                <h2>
+                  <HostName host={host} />
+                </h2>
                 <span className={`badge ${host.status}`}>{t(host.status)}</span>
               </div>
               <p>
@@ -91,7 +94,9 @@ function Overview({ hosts }: { hosts: HostSummary[] }) {
           <ul className="alerts">
             {withUpdates.map((host) => (
               <li key={host.id} className={host.updates?.security ? 'crit' : 'warn'}>
-                <a href={`#/hosts/${host.id}`}>{host.hostname}</a>
+                <a href={`#/hosts/${host.id}`}>
+                  <HostName host={host} />
+                </a>
                 <UpdatesSummary updates={host.updates} />
               </li>
             ))}
@@ -193,6 +198,7 @@ export function App() {
                   minutes={minutes}
                   loading={data.minutes !== minutes}
                   setMinutes={setMinutes}
+                  refresh={refresh}
                 />
               ) : data.hosts ? (
                 hostList ? (

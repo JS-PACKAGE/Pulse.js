@@ -34,8 +34,8 @@ export function normalizeHostname(input: unknown): string | null {
   return HOSTNAME_RE.test(h) ? h : null;
 }
 
-/** Group display names: 1–64 chars after trim, no control characters. */
-export function normalizeGroupName(input: unknown): string | null {
+/** Display names (group names, host aliases): 1–64 chars after trim, no control characters. */
+export function normalizeDisplayName(input: unknown): string | null {
   if (typeof input !== 'string') return null;
   const name = input.trim();
   if (name.length === 0 || name.length > 64) return null;

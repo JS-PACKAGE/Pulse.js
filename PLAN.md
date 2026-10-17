@@ -135,6 +135,7 @@
 | `report` | Agent→Server | header 帶 Service Token；hostId、ts、五指標＋GpuInfo[]（心跳併入，更新 lastSeen） |
 | `listHosts` | 面板→Server | 主機清單含 status（ok／alert／offline） |
 | `hostDetail` | 面板→Server | 單機五指標即時值＋近期序列 |
+| `setHostAlias` | 面板→Server | 設定／清除主機別名（只影響面板顯示，不改 hostname） |
 | `createGroup`／`renameGroup`／`deleteGroup` | 面板→Server | 自訂群組管理 |
 | `assignHost` | 面板→Server | 主機指派／移出自訂群組 |
 | `event` (SSE) | Server→面板 | 狀態變更即時推送（異常出現／解除） |
@@ -151,7 +152,7 @@
 
 ```
 Host {
-  id, hostname, osFamily (linux-deb|linux-rpm|macos),
+  id, hostname, alias (使用者自訂顯示名稱，可為空), osFamily (linux-deb|linux-rpm|macos),
   osVersion, arch, cpuModel, gpuCount, agentVersion,
   firstSeen, lastSeen, status (ok|alert|offline)
 }

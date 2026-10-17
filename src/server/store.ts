@@ -17,6 +17,7 @@ import type { Db } from './db.ts';
 export interface HostRow {
   id: number;
   hostname: string;
+  alias: string | null;
   osFamily: OsFamily;
   osVersion: string;
   arch: string;
@@ -33,12 +34,13 @@ export interface HostRow {
   updatesSecurity: number | null;
 }
 
-const HOST_COLUMNS = `id, hostname, os_family AS osFamily, os_version AS osVersion, arch, cpu_model AS cpuModel,
+const HOST_COLUMNS = `id, hostname, alias, os_family AS osFamily, os_version AS osVersion, arch, cpu_model AS cpuModel,
   gpu_count AS gpuCount, agent_version AS agentVersion, first_seen AS firstSeen, last_seen AS lastSeen,
   status, status_since AS statusSince, last_sample_ts AS lastSampleTs,
   checked_at AS updatesCheckedAt, pending AS updatesPending, security AS updatesSecurity`;
 
-const HOSTS_FROM = `hosts LEFT JOIN host_updates ON host_updates.host_id = hosts.id`;
+const HOSTS_FROM = `hosts LEFT JOIN host_updates ON host_updates.host_id = hosts.id
+  LEFT JOIN host_aliases ON host_aliases.host_id = hosts.id`;
 
 const METRIC_COLUMNS = `ts, cpu_load_percent AS cpuLoadPercent, mem_used_mb AS memUsedMB, mem_total_mb AS memTotalMB,
   disk_used_gb AS diskUsedGB, disk_total_gb AS diskTotalGB, net_rx_kbps AS netRxKbps, net_tx_kbps AS netTxKbps`;
@@ -75,9 +77,16 @@ export class Store {
          SELECT ?, id FROM host_groups WHERE kind = 'system' AND os_family = ?`,
       ),
       getHost: db.prepare(`SELECT ${HOST_COLUMNS} FROM ${HOSTS_FROM} WHERE id = ?`),
-      listHosts: db.prepare(`SELECT ${HOST_COLUMNS} FROM ${HOSTS_FROM} ORDER BY hostname, os_family`),
-      // metric_samples, gpu_samples, host_group_members and host_updates go with it (ON DELETE CASCADE).
+      // Sorted by what the panel shows: the alias when set, otherwise the hostname.
+      listHosts: db.prepare(
+        `SELECT ${HOST_COLUMNS} FROM ${HOSTS_FROM} ORDER BY COALESCE(alias, hostname) COLLATE NOCASE, hostname, os_family`,
+      ),
+      // metric_samples, gpu_samples, host_group_members, host_updates and host_aliases go with it (ON DELETE CASCADE).
       deleteHost: db.prepare(`DELETE FROM hosts WHERE id = ?`),
+      setAlias: db.prepare(
+        `INSERT INTO host_aliases (host_id, alias) VALUES (?, ?) ON CONFLICT (host_id) DO UPDATE SET alias = excluded.alias`,
+      ),
+      clearAlias: db.prepare(`DELETE FROM host_aliases WHERE host_id = ?`),
       insertMetric: db.prepare(
         `INSERT INTO metric_samples (host_id, ts, cpu_load_percent, mem_used_mb, mem_total_mb, disk_used_gb,
            disk_total_gb, net_rx_kbps, net_tx_kbps)
@@ -170,6 +179,12 @@ export class Store {
   /** False when no such host exists. */
   deleteHost(id: number): boolean {
     return this.stmt.deleteHost.run(id).changes > 0;
+  }
+
+  /** `null` removes the alias so the panel falls back to the hostname. The host must exist. */
+  setAlias(id: number, alias: string | null): void {
+    if (alias === null) this.stmt.clearAlias.run(id);
+    else this.stmt.setAlias.run(id, alias);
   }
 
   /** Newest sample by `ts` (reports may arrive out of order). */

@@ -120,6 +120,8 @@ export interface LatestSample {
 export interface HostSummary {
   id: number;
   hostname: string;
+  /** User-chosen display name; `null` means the panel shows the hostname. */
+  alias: string | null;
   osFamily: OsFamily;
   osVersion: string;
   arch: string;
@@ -191,6 +193,11 @@ export interface ListGroupsResponse {
 
 export interface GroupNameRequest {
   name: string;
+}
+
+/** `PATCH /api/hosts/:id`: `null` removes the alias. */
+export interface HostAliasRequest {
+  alias: string | null;
 }
 
 export type ApiErrorCode =

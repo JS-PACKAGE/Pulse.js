@@ -2,7 +2,7 @@ import express, { type ErrorRequestHandler, type Request, type Response } from '
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ApiError, ApiErrorCode, Group, ReportResponse } from '../shared/types.ts';
-import { normalizeGroupName, parseRegister, parseReport } from '../shared/validate.ts';
+import { normalizeDisplayName, parseRegister, parseReport } from '../shared/validate.ts';
 import { PULSE_VERSION } from '../shared/version.ts';
 import type { ServerConfig } from './config.ts';
 import type { EventHub } from './events.ts';
@@ -114,6 +114,18 @@ export function createApp(deps: AppDeps): express.Express {
     res.json(detail);
   });
 
+  api.patch('/hosts/:id', (req, res) => {
+    const id = idParam(req, 'id');
+    if (id === undefined) return fail(res, 'bad_request', ['id must be a positive integer']);
+    const raw: unknown = req.body?.alias;
+    const alias = raw === null ? null : normalizeDisplayName(raw);
+    if (raw !== null && alias === null) {
+      return fail(res, 'bad_request', ['alias must be null or 1-64 characters without control characters']);
+    }
+    if (!monitor.setAlias(id, alias)) return fail(res, 'not_found');
+    res.status(204).end();
+  });
+
   api.delete('/hosts/:id', (req, res) => {
     const id = idParam(req, 'id');
     if (id === undefined) return fail(res, 'bad_request', ['id must be a positive integer']);
@@ -126,7 +138,7 @@ export function createApp(deps: AppDeps): express.Express {
   });
 
   api.post('/groups', (req, res) => {
-    const name = normalizeGroupName(req.body?.name);
+    const name = normalizeDisplayName(req.body?.name);
     if (name === null) return fail(res, 'bad_request', ['name must be 1-64 characters without control characters']);
     if (store.customGroupNameTaken(name)) return fail(res, 'conflict');
     const id = store.createGroup(name);
@@ -156,7 +168,7 @@ export function createApp(deps: AppDeps): express.Express {
   api.patch('/groups/:id', (req, res) => {
     const group = customGroup(req, res);
     if (!group) return;
-    const name = normalizeGroupName(req.body?.name);
+    const name = normalizeDisplayName(req.body?.name);
     if (name === null) return fail(res, 'bad_request', ['name must be 1-64 characters without control characters']);
     if (store.customGroupNameTaken(name, group.id)) return fail(res, 'conflict');
     store.renameGroup(group.id, name);

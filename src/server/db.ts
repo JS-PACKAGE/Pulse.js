@@ -69,6 +69,13 @@ CREATE TABLE IF NOT EXISTS host_updates (
   security   INTEGER CHECK (security IS NULL OR security BETWEEN 0 AND pending)
 );
 
+-- User-chosen display name per host. Its own table so existing databases gain it without migrating
+-- "hosts"; re-registration only updates "hosts", so an alias survives agent restarts and upgrades.
+CREATE TABLE IF NOT EXISTS host_aliases (
+  host_id INTEGER PRIMARY KEY REFERENCES hosts(id) ON DELETE CASCADE,
+  alias   TEXT    NOT NULL
+);
+
 -- Group / HostGroup of the data model. "groups" is an SQL keyword, hence the prefix.
 CREATE TABLE IF NOT EXISTS host_groups (
   id        INTEGER PRIMARY KEY,

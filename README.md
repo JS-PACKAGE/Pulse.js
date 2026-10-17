@@ -100,11 +100,12 @@ curl -fsSL https://raw.githubusercontent.com/JS-PACKAGE/Pulse.js/main/install.sh
 | `POST /api/agent/report` | `report`：hostId、ts、metrics（7 欄，`null`＝N/A）、gpus（`null`＝採集失敗）、updates（`{checkedAt, pending, security}`；`null`／省略＝尚未成功檢查，伺服器保留既有值） | `{status}`；404 未知主機（Agent 會重新註冊）；429 過頻 |
 | `GET /api/hosts` | `listHosts`：狀態 ok／alert／offline、異常項目、最新樣本、最近一次 OS 更新檢查 | `ListHostsResponse` |
 | `GET /api/hosts/:id?minutes=60` | `hostDetail`：即時值＋近期序列（1–43200 分鐘，即最長 30 天；超過約 720 點時依時間分桶取平均） | `HostDetailResponse` |
-| `DELETE /api/hosts/:id` | 刪除主機（面板詳情頁「刪除主機」）：連同歷史樣本、GPU 樣本、更新檢查與群組指派；id 不重複使用。Agent 若仍在執行，下次上報收到 404 後會以新主機重新註冊，請先停用該主機的 Agent | 204；404 不存在 |
+| `PATCH /api/hosts/:id` | 設定主機別名（面板詳情頁「設定別名」）：`{alias}`，1–64 字、去頭尾空白、不含控制字元；`null` 清除改回顯示主機名。別名獨立於 Agent 回報的 hostname，重新註冊不會覆寫；主機列表依別名（未設定時依主機名）排序 | 204；400 格式不符；404 不存在 |
+| `DELETE /api/hosts/:id` | 刪除主機（面板詳情頁「刪除主機」）：連同歷史樣本、GPU 樣本、更新檢查、群組指派與別名；id 不重複使用。Agent 若仍在執行，下次上報收到 404 後會以新主機重新註冊，請先停用該主機的 Agent | 204；404 不存在 |
 | `GET /api/groups` | 系統群組＋自訂群組 | `{groups}` |
 | `POST /api/groups`、`PATCH /api/groups/:id`、`DELETE /api/groups/:id` | `createGroup`／`renameGroup`／`deleteGroup`（系統群組不可改，400；名稱重複 409） | 201／200／204 |
 | `PUT`／`DELETE /api/groups/:id/hosts/:hostId` | `assignHost` 指派／移出 | 204 |
-| `GET /api/events` | `event`（SSE）：`status`／`report`／`host`／`hostDeleted`／`groups` | `text/event-stream` |
+| `GET /api/events` | `event`（SSE）：`status`／`report`／`host`（新主機或別名變更）／`hostDeleted`／`groups` | `text/event-stream` |
 | `GET /api/health` | 健康檢查 | `{ok, version}` |
 | `GET /agent/pulse-agent.mjs` | Agent 單檔 bundle（供 `install.sh`） | JavaScript |
 

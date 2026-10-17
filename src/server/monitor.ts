@@ -70,6 +70,14 @@ export class Monitor {
     return true;
   }
 
+  /** False when no such host exists. `null` removes the alias. */
+  setAlias(id: number, alias: string | null): boolean {
+    if (!this.store.getHost(id)) return false;
+    this.store.setAlias(id, alias);
+    this.events.publish({ type: 'host', hostId: id });
+    return true;
+  }
+
   /** Mark hosts offline once their heartbeat is older than `offlineAfterSec`. */
   sweepOffline(): void {
     const now = this.clock();
