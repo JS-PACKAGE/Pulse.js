@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { Threshold } from '../../src/shared/types.ts';
 import { number } from './api';
 import { useI18n } from './i18n';
@@ -21,6 +22,8 @@ export function Chart({
   unit?: string;
 }) {
   const { t, lang } = useI18n();
+  // Gradient ids go into url(#…); keep only characters that need no escaping.
+  const gradientId = `chart${useId().replace(/[^\w-]/g, '')}`;
   let max = Math.max(1, threshold?.crit ?? 0, threshold?.warn ?? 0);
   let hasData = false;
   for (const line of lines) {
@@ -84,20 +87,40 @@ export function Chart({
             />
           ))}
         {lines.map((line, index) => {
-          let connected = false;
-          const path = line.points
-            .map((point) => {
-              if (point.value === null) {
-                connected = false;
-                return '';
-              }
-              const command = `${connected ? 'L' : 'M'}${x(point.ts)},${y(point.value)}`;
-              connected = true;
-              return command;
+          // Each run of non-null points is drawn separately so gaps (N/A) stay visible.
+          const segments: [number, number][][] = [];
+          let current: [number, number][] | null = null;
+          for (const point of line.points) {
+            if (point.value === null) {
+              current = null;
+              continue;
+            }
+            if (!current) {
+              current = [];
+              segments.push(current);
+            }
+            current.push([x(point.ts), y(point.value)]);
+          }
+          const path = segments
+            .map((segment) => segment.map(([px, py], i) => `${i ? 'L' : 'M'}${px},${py}`).join(' '))
+            .join(' ');
+          const area = segments
+            .map((segment) => {
+              const first = segment[0];
+              const last = segment.at(-1);
+              if (!first || !last || segment.length < 2) return '';
+              return `M${first[0]},${y(0)} ${segment.map(([px, py]) => `L${px},${py}`).join(' ')} L${last[0]},${y(0)} Z`;
             })
             .join(' ');
           return (
             <g key={line.label} className={`line-${index % 2}`}>
+              <defs>
+                <linearGradient id={`${gradientId}-${index}`} x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0" stopColor="currentColor" stopOpacity="0.32" />
+                  <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <path className="area" d={area} fill={`url(#${gradientId}-${index})`} />
               <path className="series" d={path} />
               {line.points.map((point, pointIndex) =>
                 point.value === null ? null : (

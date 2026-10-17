@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { HOST_STATUSES } from '../../src/shared/types.ts';
 import type { HostSummary } from '../../src/shared/types.ts';
 import { duration, number, osNames, rate } from './api';
 import { Groups } from './Groups';
@@ -19,12 +20,23 @@ function Overview({ hosts }: { hosts: HostSummary[] }) {
   return (
     <>
       <h1>{t('overview')}</h1>
+      {hosts.length > 0 && (
+        <div className="stats">
+          {HOST_STATUSES.map((status) => (
+            <div className={`panel stat ${status}`} key={status}>
+              <span className="stat-value">{hosts.filter((host) => host.status === status).length}</span>
+              <span className="stat-label">{t(status)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {hosts.length === 0 ? (
         <div className="panel empty">
           <h2>{t('noHosts')}</h2>
         </div>
       ) : abnormal.length === 0 ? (
         <div className="panel empty healthy">
+          <div className="radar" aria-hidden="true" />
           <h2>{t('healthy')}</h2>
           <p>{t('healthyHint')}</p>
         </div>
@@ -121,7 +133,13 @@ export function App() {
     <>
       <header className="topbar">
         <a className="brand" href="#/">
-          Pulse<span>.js</span>
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect className="logo-frame" x="1.5" y="1.5" width="29" height="29" rx="6" />
+            <path className="logo-ecg" pathLength="100" d="M4.5 17H10l2.5-6.5 4.5 13 3.5-9.5 1.5 3h5.5" />
+          </svg>
+          <span className="brand-name">
+            Pulse<span>.js</span>
+          </span>
         </a>
         <nav aria-label="Pulse.js">
           <a href="#/" aria-current={overview ? 'page' : undefined}>
@@ -162,7 +180,11 @@ export function App() {
                 {t(error)} {data && t('stale')} <button onClick={refresh}>{t('retry')}</button>
               </div>
             )}
-            {!data && !error && <p role="status">{t('loading')}</p>}
+            {!data && !error && (
+              <p role="status" className="boot">
+                {t('loading')}
+              </p>
+            )}
             {data &&
               (hostId !== null && data.detail ? (
                 <HostDetail

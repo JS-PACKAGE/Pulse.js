@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Group, HostDetailResponse } from '../../src/shared/types.ts';
 import { api, errorKey, number, osNames, percent, rate } from './api';
 import { Chart } from './Chart';
+import { Gauge } from './Gauge';
 import { useI18n } from './i18n';
 import type { MessageKey } from './i18n';
 import { UpdatesSummary } from './Updates';
@@ -13,6 +14,14 @@ const RANGES: [minutes: number, label: MessageKey][] = [
   [10080, 'day7'],
   [43200, 'month1'],
 ];
+/** Decorative bar for a percentage already printed as text next to it. */
+function Meter({ value }: { value: number | null }) {
+  return (
+    <div className="meter" aria-hidden="true">
+      <span style={{ width: `${Math.min(Math.max(value ?? 0, 0), 100)}%` }} />
+    </div>
+  );
+}
 export function HostDetail({
   data,
   groups,
@@ -123,25 +132,26 @@ export function HostDetail({
       </section>
       <h2>{t('current')}</h2>
       <div className="card-grid metrics">
-        <section className="panel">
-          <h3>{t('cpu')}</h3>
-          <strong>{number(metrics?.cpuLoadPercent, '%')}</strong>
-        </section>
-        <section className="panel">
-          <h3>{t('memory')}</h3>
-          <strong>{number(percent(metrics?.memUsedMB, metrics?.memTotalMB), '%')}</strong>
+        <Gauge title={t('cpu')} value={metrics?.cpuLoadPercent ?? null} threshold={thresholds.cpuLoadPercent} />
+        <Gauge
+          title={t('memory')}
+          value={percent(metrics?.memUsedMB, metrics?.memTotalMB)}
+          threshold={thresholds.memUsedPercent}
+        >
           <p>
             {number(metrics?.memUsedMB)} / {number(metrics?.memTotalMB)} MB
           </p>
-        </section>
-        <section className="panel">
-          <h3>{t('disk')}</h3>
-          <strong>{number(percent(metrics?.diskUsedGB, metrics?.diskTotalGB), '%')}</strong>
+        </Gauge>
+        <Gauge
+          title={t('disk')}
+          value={percent(metrics?.diskUsedGB, metrics?.diskTotalGB)}
+          threshold={thresholds.diskUsedPercent}
+        >
           <p>
             {number(metrics?.diskUsedGB)} / {number(metrics?.diskTotalGB)} GB
           </p>
-        </section>
-        <section className="panel">
+        </Gauge>
+        <section className="panel network">
           <h3>{t('network')}</h3>
           <p>
             ↓ {t('receive')}: {rate(metrics?.netRxKbps)}
@@ -170,10 +180,12 @@ export function HostDetail({
                 <p>
                   {t('utilization')}: {number(gpu.utilPercent, '%')}
                 </p>
+                <Meter value={gpu.utilPercent} />
                 <p>
                   {t('memory')}: {number(gpu.memUsedMB)} / {number(gpu.memTotalMB)} MB (
                   {number(percent(gpu.memUsedMB, gpu.memTotalMB), '%')})
                 </p>
+                <Meter value={percent(gpu.memUsedMB, gpu.memTotalMB)} />
               </div>
             ))}
           </div>
