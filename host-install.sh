@@ -46,8 +46,24 @@ fi
 if [[ $family == ubuntu ]]; then command -v systemctl >/dev/null 2>&1 || die '面板安裝需要 systemd'; fi
 launchd_label=js-package.pulse
 launchd_plist=/Library/LaunchDaemons/$launchd_label.plist
+launchd_reload() {
+  local waited=0
+  launchctl bootout "system/$launchd_label" >/dev/null 2>&1 || true
+  # bootout 是非同步的：舊行程（可能還掛著 SSE 連線）結束前 bootstrap 會失敗
+  # （Bootstrap failed: 5: Input/output error），留下未載入的服務。等 launchd 完全卸載再載入；
+  # launchd 預設 ExitTimeOut 20 秒後強制結束，故最多等 30 秒。
+  while launchctl print "system/$launchd_label" >/dev/null 2>&1; do
+    ((waited < 60)) || return 1
+    sleep 0.5
+    waited=$((waited + 1))
+  done
+  # 曾被 `launchctl disable` 的服務無法 bootstrap，也不會開機啟動；先解除停用。
+  launchctl enable "system/$launchd_label"
+  launchctl bootstrap system "$launchd_plist"
+}
+# 回滾用：部署可能在 bootout 之後才失敗，此時服務已未載入，kickstart 無效，必須重新載入。
 service_restart() {
-  if [[ $family == macos ]]; then launchctl kickstart -k "system/$launchd_label"; else systemctl restart pulse; fi
+  if [[ $family == macos ]]; then launchd_reload; else systemctl restart pulse; fi
 }
 service_stop() {
   if [[ $family == macos ]]; then launchctl bootout "system/$launchd_label"; else systemctl stop pulse; fi
@@ -79,7 +95,9 @@ cleanup() {
     fi
     if ((had_previous)); then
       if mv /opt/pulse/app.prev /opt/pulse/app; then
-        service_restart >/dev/null 2>&1 || true
+        if ! service_restart >/dev/null 2>&1; then
+          printf '[pulse] 錯誤：舊版已還原，但服務無法重新啟動；請手動檢查服務狀態\n' >&2
+        fi
       else
         printf '[pulse] 錯誤：自動回滾失敗；舊版仍保留於 /opt/pulse/app.prev\n' >&2
       fi
@@ -233,10 +251,7 @@ fs.writeFileSync(process.env.PULSE_INSTALL_PLIST, `<?xml version="1.0" encoding=
   unset PULSE_INSTALL_NODE PULSE_INSTALL_PLIST PULSE_INSTALL_LABEL
   chown root:wheel "$launchd_plist"
   chmod 644 "$launchd_plist"
-  launchctl bootout "system/$launchd_label" >/dev/null 2>&1 || true
-  # 曾被 `launchctl disable` 的服務無法 bootstrap，也不會開機啟動；先解除停用。
-  launchctl enable "system/$launchd_label"
-  launchctl bootstrap system "$launchd_plist"
+  launchd_reload || die 'launchd 無法重新載入面板服務（舊服務 30 秒內未卸載或 bootstrap 失敗）'
 else
   cat >/etc/systemd/system/pulse.service <<UNIT
 [Unit]
