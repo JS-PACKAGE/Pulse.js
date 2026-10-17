@@ -165,7 +165,13 @@ export function App() {
             {!data && !error && <p role="status">{t('loading')}</p>}
             {data &&
               (hostId !== null && data.detail ? (
-                <HostDetail data={data.detail} groups={data.groups.groups} minutes={minutes} setMinutes={setMinutes} />
+                <HostDetail
+                  data={data.detail}
+                  groups={data.groups.groups}
+                  minutes={minutes}
+                  loading={data.minutes !== minutes}
+                  setMinutes={setMinutes}
+                />
               ) : data.hosts ? (
                 hostList ? (
                   <Groups groups={data.groups.groups} hosts={data.hosts.hosts} refresh={refresh} />

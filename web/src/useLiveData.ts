@@ -5,6 +5,8 @@ import type { MessageKey } from './i18n';
 export interface PageData {
   hosts?: ListHostsResponse;
   detail?: HostDetailResponse;
+  /** Range the detail series was fetched for; differs from the requested one while a new range loads. */
+  minutes?: number;
   groups: ListGroupsResponse;
 }
 export function useLiveData(hostId: number | null, minutes: number) {
@@ -13,9 +15,11 @@ export function useLiveData(hostId: number | null, minutes: number) {
   const [connection, setConnection] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting');
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  // Only a different page starts blank; a new time range keeps the current page (and its charts)
+  // on screen until the new series arrives.
   useEffect(() => {
     setData(null);
-  }, [hostId, minutes]);
+  }, [hostId]);
   useEffect(() => {
     const current = new AbortController();
     const options = { signal: current.signal };
@@ -31,7 +35,7 @@ export function useLiveData(hostId: number | null, minutes: number) {
         setData(
           hostId === null
             ? { groups, hosts: page as ListHostsResponse }
-            : { groups, detail: page as HostDetailResponse },
+            : { groups, detail: page as HostDetailResponse, minutes },
         );
         setError(null);
       } catch (failure) {

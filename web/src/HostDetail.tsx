@@ -17,11 +17,14 @@ export function HostDetail({
   data,
   groups,
   minutes,
+  loading,
   setMinutes,
 }: {
   data: HostDetailResponse;
   groups: Group[];
   minutes: number;
+  /** The charts still show the previous range while the selected one loads. */
+  loading: boolean;
   setMinutes: (value: number) => void;
 }) {
   const { t, lang } = useI18n();
@@ -186,7 +189,7 @@ export function HostDetail({
           ))}
         </div>
       </div>
-      <div className="chart-grid">
+      <div className={loading ? 'chart-grid loading' : 'chart-grid'} aria-busy={loading}>
         <Chart
           title={t('cpu')}
           since={since}

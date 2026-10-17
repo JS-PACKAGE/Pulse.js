@@ -346,6 +346,10 @@ dd {
   gap: 1rem;
   margin-top: 1rem;
 }
+.chart-grid.loading {
+  opacity: 0.5;
+  transition: opacity 0.2s 0.15s;
+}
 .chart {
   min-width: 0;
   margin: 0;
