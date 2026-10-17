@@ -207,15 +207,16 @@ export function Groups({ groups, hosts, refresh }: { groups: Group[]; hosts: Hos
       setBusy(false);
     }
   }
+  // A system group exists for every supported OS; only show the ones that actually have hosts.
+  const systemGroups = groups.filter((group) => group.kind === 'system' && group.hostIds.length > 0);
   return (
     <>
       <h1>{t('hosts')}</h1>
       <h2>{t('systemGroups')}</h2>
-      {groups
-        .filter((group) => group.kind === 'system')
-        .map((group) => (
-          <GroupPanel key={group.id} group={group} hosts={hosts} refresh={refresh} />
-        ))}
+      {systemGroups.length === 0 && <p className="muted">{t('noHosts')}</p>}
+      {systemGroups.map((group) => (
+        <GroupPanel key={group.id} group={group} hosts={hosts} refresh={refresh} />
+      ))}
       <h2>{t('customGroups')}</h2>
       <form
         className="inline panel"
